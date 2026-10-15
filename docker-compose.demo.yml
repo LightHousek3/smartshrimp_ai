@@ -1,0 +1,20 @@
+# Explicit synthetic demo; never use for real diagnoses.
+services:
+  bootstrap:
+    build: .
+    command: ["python", "-m", "scripts.bootstrap_demo"]
+    volumes:
+      - demo-models:/service/models
+    environment:
+      DEMO_OUTPUT_ROOT: /service/models
+  ai:
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    environment:
+      MODEL_DIR: /service/models/shrimpdx-toy-v1.0.0
+      ALLOW_SYNTHETIC_MODEL: "true"
+    volumes:
+      - demo-models:/service/models:ro
+volumes:
+  demo-models:

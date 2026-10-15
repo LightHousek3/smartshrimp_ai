@@ -1,0 +1,11 @@
+model_version: shrimpdx-toy-v1.0.0
+backbone: tiny
+manifest: training/data/toy-v1/manifest.json
+seed: 42
+epochs: 3
+batch_size: 8
+learning_rate: 0.005
+patience: 2
+loss: weighted_ce
+randaugment: true
+device: cpu

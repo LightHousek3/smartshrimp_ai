@@ -1,23 +1,51 @@
 name: Service checks
 on: [push, pull_request]
 jobs:
-  contracts:
+  python:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: python -m pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cpu
       - run: python -m pip install -r requirements-dev.txt
+      - run: python -m pip check
       - run: python -m ruff check .
       - run: python -m pytest -q
-  cvio-core:
+      - run: python scripts/make_toy_dataset.py
+      - run: python -m training.train --config training/configs/toy.yaml
+      - run: python -m training.evaluate --checkpoint models/shrimpdx-toy-v1.0.0 --split test
+      - run: python -m training.export --checkpoint models/shrimpdx-toy-v1.0.0 --format onnx
+      - run: python -m scripts.check_api
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "API_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+      - run: docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build -d --wait --wait-timeout 300
+      - run: curl --fail http://localhost:8000/v1/health
+      - name: Real HTTP multipart smoke test
+        run: |
+          docker compose exec -T ai python -c "from PIL import Image; import random; r=random.Random(42); im=Image.frombytes('RGB',(224,224),r.randbytes(224*224*3)); im.save('/tmp/test.png')"
+          docker compose cp ai:/tmp/test.png /tmp/test.png
+          curl --fail -H "X-API-Key: $API_KEY" -F "images=@/tmp/test.png;type=image/png" http://localhost:8000/v1/diagnose
+      - if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.demo.yml logs
+      - if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.demo.yml down -v
+  cvio-training:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
       - run: python -m pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cpu
       - run: python -m pip install -r requirements-training.txt
       - run: python -m pip check
