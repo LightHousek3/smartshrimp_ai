@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SmartShrimp ONNX artifact metadata v2 — Phase 1 design, not a loader",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "model_version", "backend", "output_kind", "class_order", "preprocessing", "gate", "source_checkpoint_sha256", "onnx_sha256", "dataset_version", "split_id", "manifest_sha256", "config_sha256", "synthetic"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "model_version": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$"},
+    "backend": {"const": "onnxruntime"},
+    "output_kind": {"const": "probabilities"},
+    "class_order": {"const": ["Healthy", "BG", "WSSV", "WSSV_BG"]},
+    "source_checkpoint_sha256": {"$ref": "#/$defs/sha256"},
+    "onnx_sha256": {"$ref": "#/$defs/sha256"},
+    "manifest_sha256": {"$ref": "#/$defs/sha256"},
+    "config_sha256": {"$ref": "#/$defs/sha256"},
+    "dataset_version": {"type": "string", "minLength": 1},
+    "split_id": {"type": "string", "minLength": 1},
+    "synthetic": {"type": "boolean"},
+    "preprocessing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtime", "runtime_version", "input_size", "color", "layout", "dtype", "resize", "crop", "interpolation", "pixel_scale", "mean", "std", "alpha_policy", "exif_transpose", "background_removal"],
+      "properties": {
+        "runtime": {"const": "ultralytics"},
+        "runtime_version": {"type": "string", "minLength": 1},
+        "input_size": {"const": 224},
+        "color": {"const": "RGB"},
+        "layout": {"const": "NCHW"},
+        "dtype": {"const": "float32"},
+        "resize": {"const": "shortest_edge"},
+        "crop": {"const": "center"},
+        "interpolation": {"const": "bilinear"},
+        "pixel_scale": {"const": "divide_by_255"},
+        "mean": {"const": [0, 0, 0]},
+        "std": {"const": [1, 1, 1]},
+        "alpha_policy": {"const": "drop_alpha_preserve_rgb"},
+        "exif_transpose": {"type": "boolean"},
+        "background_removal": {"const": "none"}
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "blur_metric", "blur_threshold", "min_image_size", "max_file_bytes", "max_image_pixels", "allowed_formats", "reject_animated"],
+      "properties": {
+        "version": {"type": "string", "minLength": 1},
+        "blur_metric": {"type": "string", "minLength": 1},
+        "blur_threshold": {"type": "number", "minimum": 0},
+        "min_image_size": {"type": "integer", "minimum": 1},
+        "max_file_bytes": {"type": "integer", "minimum": 1},
+        "max_image_pixels": {"type": "integer", "minimum": 1},
+        "allowed_formats": {"const": ["JPEG", "PNG", "WEBP"]},
+        "reject_animated": {"const": true}
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

@@ -7,7 +7,7 @@ lưu ảnh và lịch sử; service không sở hữu database hoặc tự tạo
 
 ## Trạng thái
 
-Hợp đồng bốn nhãn, nguồn CVIO và recipe đã được chốt; implementation dữ liệu/training sẽ được bổ sung theo các mốc tiếp theo.
+Adapter dữ liệu/reference policy và thiết kế artifact v2 đã có. Chưa port loss/attention hoặc chạy training.
 
 Không sử dụng metrics đã công bố của CVIO như kết quả thực nghiệm SmartShrimp.
 Các commit phản ánh các mốc tích hợp source và kiểm thử; chúng không chứng minh
@@ -23,7 +23,7 @@ python -m ruff check .
 python -m pytest -q
 ```
 
-Tài liệu: [Kiến trúc và phạm vi](docs/ARCHITECTURE.md).
+Tài liệu: [Kiến trúc và phạm vi](docs/ARCHITECTURE.md) · [Dataset card](training/data/README.md) · [Artifact v2](docs/ARTIFACT_V2_DESIGN.md).
 
 ## Nguồn và giấy phép
 
