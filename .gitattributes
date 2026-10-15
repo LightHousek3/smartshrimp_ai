@@ -1,0 +1,2 @@
+# Preserve the exact upstream reference bytes: its SHA-256 identifies membership.
+training/references/cvio_split_seed42.csv -text

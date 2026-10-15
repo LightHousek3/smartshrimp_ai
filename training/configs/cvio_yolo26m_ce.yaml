@@ -1,0 +1,30 @@
+# Phase 1 recipe specification. Not accepted by the legacy training.train CLI.
+recipe_schema_version: 1
+upstream_commit: fd64876cd2fd3acb24640b729d4f019996ebb39b
+dataset_version: cvio-sdi4-kaggle-v1
+manifest: training/data/cvio-sdi4-kaggle-v1/manifest.json
+manifest_policy: reference_image_level
+model: yolo26m-cls
+pretrained: yolo26m-cls.pt
+task: classify
+method: baseline_ce
+imgsz: 224
+epochs: 30
+batch: 32
+workers: 4
+amp: true
+patience: 15
+optimizer: AdamW
+lr0: 0.00125
+lrf: 0.01
+cos_lr: true
+auto_augment: randaugment
+cache: false
+seed: 42
+checkpoint_selection: ultralytics_classification_fitness
+runtime_status: qualification_required_in_phase_2
+loss:
+  name: cross_entropy
+  class_weighting: none
+attention:
+  name: none

@@ -1,0 +1,15 @@
+.venv/
+.env
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.coverage
+*.egg-info/
+/models/
+/reports/
+training/data/*
+!training/data/README.md
+.tmp/
+
+# Local working notes and verification records.
+.local/

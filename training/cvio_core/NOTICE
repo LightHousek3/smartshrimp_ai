@@ -1,0 +1,22 @@
+CVIO integration — source and modifications notice
+
+Repository: https://github.com/hntnhan1111-ayai/CVio_Shrimp_Disease_Classification_Capstone_SU26
+Branch: report/final-xelatex-e2e-2026-08-11
+Commit: fd64876cd2fd3acb24640b729d4f019996ebb39b
+Source license: GNU Affero General Public License version 3 (AGPL-3.0).
+The complete license text is included in LICENSE in this directory.
+The repository's service MIT notice does not relicense CVIO-derived material.
+
+Foundation: reference membership, classification contract and frozen recipe.
+No upstream loss/attention/trainer implementation is ported in this milestone.
+Planned ports: src/cvio_asl_ldam/losses/asl_ldam.py,
+src/cvio_asl_ldam/attention/simam_dcfr.py, attention/patch_yolo.py,
+models/yolo_train.py and utils/run_guard.py; configs/train/yolo26m_ce.yaml
+and configs/train/yolo26m_asl_ldam_simam_dcfr.yaml define the recipe.
+
+Reference: artifacts/manifests/split_manifest_seed42.csv. Its bytes and SHA-256
+are preserved; reference membership takes precedence over regenerating a split.
+Dataset: uynnhy/processed-images version 1; Kaggle license metadata Unknown.
+The project owner confirmed CVIO permission to use source, weights and dataset.
+This does not assert an unpublished alternative license. No images or weights
+are distributed in the source repository. See training/data/README.md when added.
