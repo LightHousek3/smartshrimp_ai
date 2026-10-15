@@ -7,7 +7,7 @@ lưu ảnh và lịch sử; service không sở hữu database hoặc tự tạo
 
 ## Trạng thái
 
-Adapter dữ liệu/reference policy và thiết kế artifact v2 đã có. Chưa port loss/attention hoặc chạy training.
+Core YOLO26m-cls, ASL-LDAM/SimAM-DCFR và numerical regression đã có. Runner thực nghiệm sẽ được thêm ở mốc tiếp theo.
 
 Không sử dụng metrics đã công bố của CVIO như kết quả thực nghiệm SmartShrimp.
 Các commit phản ánh các mốc tích hợp source và kiểm thử; chúng không chứng minh
@@ -18,12 +18,12 @@ hiệu quả phân loại trên dữ liệu thực địa hoặc một lần tra
 Python 3.12 cho môi trường qualification training. Tạo venv riêng rồi chạy:
 
 ```bash
-python -m pip install -r requirements-dev.txt
+python -m pip install -r requirements-training.txt
 python -m ruff check .
 python -m pytest -q
 ```
 
-Tài liệu: [Kiến trúc và phạm vi](docs/ARCHITECTURE.md) · [Dataset card](training/data/README.md) · [Artifact v2](docs/ARTIFACT_V2_DESIGN.md).
+Tài liệu: [Kiến trúc và phạm vi](docs/ARCHITECTURE.md) · [Dataset card](training/data/README.md) · [Artifact v2](docs/ARTIFACT_V2_DESIGN.md) · [Core CVIO](docs/CVIO_CORE.md).
 
 ## Nguồn và giấy phép
 

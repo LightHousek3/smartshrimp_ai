@@ -1,0 +1,5 @@
+# Training-only dependencies. Serving requirements do not import Ultralytics.
+-r requirements-dev.txt
+-c constraints-training.txt
+ultralytics==8.4.72
+scikit-learn==1.7.2

@@ -7,12 +7,12 @@ Source license: GNU Affero General Public License version 3 (AGPL-3.0).
 The complete license text is included in LICENSE in this directory.
 The repository's service MIT notice does not relicense CVIO-derived material.
 
-Foundation: reference membership, classification contract and frozen recipe.
-No upstream loss/attention/trainer implementation is ported in this milestone.
-Planned ports: src/cvio_asl_ldam/losses/asl_ldam.py,
-src/cvio_asl_ldam/attention/simam_dcfr.py, attention/patch_yolo.py,
-models/yolo_train.py and utils/run_guard.py; configs/train/yolo26m_ce.yaml
-and configs/train/yolo26m_asl_ldam_simam_dcfr.yaml define the recipe.
+Ported: losses/asl_ldam.py -> losses.py; attention/simam_dcfr.py -> attention.py;
+attention/patch_yolo.py -> trainer.py. Formulas and gradients are covered by
+upstream golden fixtures. Trainer adaptation wires config, extracts eval logits,
+verifies pretrained transfer before attention, preserves custom modules during
+reload/resume, and audits optimizer/EMA. Runtime: Ultralytics 8.4.72.
+Orchestration and Kaggle runner are introduced in the following milestone.
 
 Reference: artifacts/manifests/split_manifest_seed42.csv. Its bytes and SHA-256
 are preserved; reference membership takes precedence over regenerating a split.

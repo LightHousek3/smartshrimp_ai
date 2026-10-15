@@ -1,0 +1,23 @@
+# Qualified on Windows/Python 3.12 CPU; Kaggle Linux/CUDA qualification is pending.
+# CUDA wheel build is installed separately; each run records a complete pip freeze.
+charset-normalizer==3.5.2
+cloudpickle==3.1.2
+contourpy==1.4.0
+cycler==0.12.1
+fonttools==4.67.0
+joblib==1.6.0
+kiwisolver==1.5.1
+matplotlib==3.11.2
+nvidia-ml-py==13.615.71
+opencv-python==5.0.0.93
+polars==2.0.0
+polars-runtime-32==2.0.0
+psutil==7.2.2
+pyparsing==3.3.3
+python-dateutil==2.9.0.post0
+requests==2.34.2
+scipy==1.18.1
+six==1.17.0
+threadpoolctl==3.7.0
+ultralytics-thop==2.2.2
+urllib3==2.8.0
