@@ -1,22 +1,62 @@
-CVIO integration — source and modifications notice
+CVIO training integration — Phase 2, 2026-10-15
 
-Repository: https://github.com/hntnhan1111-ayai/CVio_Shrimp_Disease_Classification_Capstone_SU26
+Upstream repository:
+https://github.com/hntnhan1111-ayai/CVio_Shrimp_Disease_Classification_Capstone_SU26
 Branch: report/final-xelatex-e2e-2026-08-11
-Commit: fd64876cd2fd3acb24640b729d4f019996ebb39b
+Commit: fd64876cd2fd3acb24640b729d4f019996ebb39b (fd64876)
 Source license: GNU Affero General Public License version 3 (AGPL-3.0).
-The complete license text is included in LICENSE in this directory.
-The repository's service MIT notice does not relicense CVIO-derived material.
+License text at the pinned commit:
+https://github.com/hntnhan1111-ayai/CVio_Shrimp_Disease_Classification_Capstone_SU26/blob/fd64876cd2fd3acb24640b729d4f019996ebb39b/LICENSE
 
-Ported: losses/asl_ldam.py -> losses.py; attention/simam_dcfr.py -> attention.py;
-attention/patch_yolo.py -> trainer.py. Formulas and gradients are covered by
-upstream golden fixtures. Trainer adaptation wires config, extracts eval logits,
-verifies pretrained transfer before attention, preserves custom modules during
-reload/resume, and audits optimizer/EMA. Runtime: Ultralytics 8.4.72.
-Orchestration and Kaggle runner are introduced in the following milestone.
+The inherited/adapted implementation in this directory is AGPL-3.0, not MIT.
+The full upstream license is included in LICENSE in this directory.
 
-Reference: artifacts/manifests/split_manifest_seed42.csv. Its bytes and SHA-256
-are preserved; reference membership takes precedence over regenerating a split.
-Dataset: uynnhy/processed-images version 1; Kaggle license metadata Unknown.
-The project owner confirmed CVIO permission to use source, weights and dataset.
-This does not assert an unpublished alternative license. No images or weights
-are distributed in the source repository. See training/data/README.md when added.
+Inherited/adapted upstream files (paths relative to upstream root):
+- src/cvio_asl_ldam/losses/asl_ldam.py
+  Ported to losses.py; preserves formulas and default parameters. Verified
+  float32 values and gradients against upstream numerical fixtures.
+- src/cvio_asl_ldam/attention/simam_dcfr.py
+  Ported to attention.py; preserves SimAM, texture, gate and residual operations.
+  Verified output, input gradient and every parameter gradient against upstream.
+- src/cvio_asl_ldam/attention/patch_yolo.py
+  Adapted in trainer.py for Ultralytics 8.4.72. Corrects evaluation tuple to use
+  logits, wires all configured loss parameters, verifies pretrained transfer
+  before wrapping the classifier, probes actual input channels, preserves the
+  complete custom model on resume, and audits restored optimizer/EMA state.
+- src/cvio_asl_ldam/models/yolo_train.py
+  Orchestration reimplemented in ../cvio_run.py: immutable run identity, explicit
+  paths, full membership/hash verification, byte-preserving train/val staging,
+  no test staging, guarded completion/skip/resume, evaluation and evidence ZIPs.
+- src/cvio_asl_ldam/utils/run_guard.py
+  Reference for lifecycle semantics; corrected completion-status cycle. No
+  assertion that a directory or a running status proves a completed experiment.
+- configs/train/yolo26m_ce.yaml
+- configs/train/yolo26m_asl_ldam_simam_dcfr.yaml
+  Frozen recipe values in ../configs and validated by config.py. Checkpoint
+  selection remains native Ultralytics classification fitness. final_eval no
+  longer strips optimizer state; best-checkpoint validation is explicit.
+
+New integration support: runtime.py configures a local settings directory,
+disables third-party tracking, and requires the qualified Ultralytics version.
+It restores native Pillow Image.open after the runtime's global HEIF patch,
+keeping PNG/JPEG decode and corrupt-input error behavior isolated from training.
+../cvio_run.py and ../../scripts/run_cvio_kaggle.py record actual runtime,
+configuration and checksums. These additions do not assert bitwise reproduction
+of the unavailable official SDI-4 training environment or published scores.
+
+Phase 1 reference data and protocol:
+- artifacts/manifests/split_manifest_seed42.csv is preserved byte-for-byte at
+  training/references/cvio_split_seed42.csv. SHA-256:
+  c02e7f0b9a94cb648bca11decfbaa576503c297de849f6e027599a8ed323a965
+- configs/dataset/shrimpdiseasebd_seed42.yaml supplies class/split counts.
+- src/cvio_asl_ldam/data/make_split.py supplies reference-first protocol and the
+  optional two-stage sklearn comparison recipe; it is not used to replace the
+  frozen membership. training/cvio_data.py is the SmartShrimp import adapter.
+The repository-wide MIT notice must not be interpreted as relicensing this
+upstream reference material or the CVIO-derived core.
+
+The project owner confirmed permission from the CVIO team to use source,
+weights and dataset. This does not assert a separate unpublished license or
+relicense Ultralytics assets. Kaggle metadata for uynnhy/processed-images v1
+states license "Unknown"; dataset permission and limitations are recorded in
+training/data/README.md. No third-party weights or images are distributed here.
