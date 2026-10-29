@@ -1,0 +1,13 @@
+.venv/
+.env
+.env.*
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.coverage
+*.egg-info/
+classification/models/*
+!classification/models/.gitkeep
+classification/.runtime/
+classification/reports/
+.local/

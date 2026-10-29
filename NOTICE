@@ -1,0 +1,25 @@
+SmartShrimp AI classification integration
+
+CVIO repository:
+https://github.com/hntnhan1111-ayai/CVio_Shrimp_Disease_Classification_Capstone_SU26
+Branch: report/final-xelatex-e2e-2026-08-11
+Commit: fd64876cd2fd3acb24640b729d4f019996ebb39b
+Source license: AGPL-3.0; the license text is included in LICENSE.
+
+The classification service follows the native checkpoint inference workflow
+in scripts/04_eval_clean.py. It uses the supplied checkpoint unchanged through
+Ultralytics 8.4.72. No training, loss replacement or attention injection is done.
+Ultralytics remains an external AGPL-3.0 dependency with its original copyright.
+
+The exact checkpoint SHA-256 is
+4305e49158129c4a6acaa8fdaf7b5982a7f4d93cc233f11d17479e04b0e438c1.
+CVIO's docs/CHECKPOINTS.md and release audit identify it as HISTORICAL_NONFINAL,
+with a baseline_ce run name and no SimAMDCFR module. The supplied handoff label
+ASL-LDAM / SimAM-DCFR is not treated as verified architecture or performance.
+
+API shape and upload/authentication checks are adapted from SmartShrimp AI
+commit 3013d26dab0730d7b8b25f3adcc018c665c16c89 (MIT integration code).
+Original MIT copyright/license for reused portions is retained in
+classification/THIRD_PARTY_NOTICES. The combined integration source is provided
+under AGPL-3.0. This does not relicense third-party weights or datasets.
+The project owner confirmed CVIO permission for use of code, weights and data.
