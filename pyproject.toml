@@ -1,0 +1,14 @@
+[tool.pytest.ini_options]
+testpaths = ["classification/tests"]
+pythonpath = ["."]
+cache_dir = ".local/pytest-cache"
+markers = ["integration: requires local checkpoint assets"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+cache-dir = ".local/ruff-cache"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]
