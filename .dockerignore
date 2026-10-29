@@ -1,0 +1,15 @@
+.git
+.venv
+.env
+.env.*
+.local
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+classification/models
+classification/.runtime
+classification/reports
+classification/tests
+classification/scripts
+classification/check_api.py
+rag

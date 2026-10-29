@@ -205,7 +205,7 @@ class Classifier:
             "upstream_status": "HISTORICAL_NONFINAL",
             "official_proposed_checkpoint": False,
             "checkpoint_run_name": "yolo26m_cls__baseline_ce__seed42",
-            "observed_attention": "none",
+            "custom_attention": "none",
             "preprocessing": {
                 "resize": "shortest_edge_224",
                 "crop": "center_224",

@@ -1,0 +1,25 @@
+services:
+  classification:
+    build:
+      context: .
+      dockerfile: classification/Dockerfile
+    environment:
+      API_KEY: ${API_KEY:?Set API_KEY in the private .env file}
+      MODEL_DIR: /service/models
+      ALLOW_HISTORICAL_CANDIDATE: ${ALLOW_HISTORICAL_CANDIDATE:-false}
+      BACKGROUND_REMOVAL: ${BACKGROUND_REMOVAL:-false}
+      MAX_IMAGE_PIXELS: ${MAX_IMAGE_PIXELS:-20000000}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
+      TORCH_NUM_THREADS: ${TORCH_NUM_THREADS:-2}
+    volumes:
+      - ./classification/models:/service/models:ro
+    ports:
+      - "127.0.0.1:8000:8000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    init: true
