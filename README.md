@@ -1,68 +1,163 @@
 # SmartShrimp AI
 
-- `classification/`: CVIO YOLO26m-cls checkpoint inference and HTTP API.
-- `rag/`: document assistant imported from [phamquoctu-se/rag-al](https://github.com/phamquoctu-se/rag-al), with its original commit history.
+AI services used by the SmartShrimp backend:
 
-Python 3.12, CPU runtime. Local weights and `.env` are required.
-Source and third-party terms are recorded in `NOTICE` and `LICENSE`.
+- **Classification:** predicts one of four shrimp health classes using the supplied CVIO YOLO26m-cls checkpoint. This module runs inference; it does not train the model.
+- **RAG:** answers questions using indexed documents and Google Gemini. It was imported from [rag-al](https://github.com/phamquoctu-se/rag-al) with its original commit history.
 
-```powershell
-python -m venv .venv
-.venv/Scripts/python.exe -m pip install -c classification/constraints.txt -r classification/requirements-dev.txt
-.venv/Scripts/python.exe -m uvicorn classification.app:create_app --factory --host 127.0.0.1 --port 8080 --workers 1
+The backend handles user permissions, image storage and request history. The app and web client call the backend, not these services directly.
+
+## Project structure
+
+```text
+smartshrimp_ai/
+├── classification/       # Classification API, dependencies and tests
+│   ├── models/           # Local checkpoint files, not committed
+│   └── .env              # Private classification settings
+├── rag/                  # RAG API, ingestion code, dependencies and tests
+│   ├── data/documents/   # Local documents, not committed
+│   └── .env              # Private RAG settings
+├── docker-compose.yml    # Runs both services under smartshrimp-ai
+├── NOTICE                # Source references and third-party terms
+└── LICENSE
 ```
 
-Or run `docker compose -p smartshrimp-classification up --build -d --wait`.
-Classification is available at `http://127.0.0.1:8080`; set the backend's
-`AI_SERVICE_URL` to this address. Docker maps host port 8080 to container port 8000,
-leaving host port 8000 available for the separate RAG service.
-Keep `API_KEY` private. `.env` also configures `ALLOW_HISTORICAL_CANDIDATE`,
-`BACKGROUND_REMOVAL`, `MAX_IMAGE_PIXELS`, `RATE_LIMIT_PER_MINUTE`, `TORCH_NUM_THREADS`.
-Put `cvio-classification.pt` and, when background removal is enabled, `u2net.onnx`
-in `classification/models/`. Startup checks both SHA-256 values; no automatic download.
+Each service has its own dependencies and container. There is no root `.env`.
 
-BE calls `POST /v1/diagnose` with `X-API-Key` and 1–5 files in multipart field
-`images`, each JPEG/PNG/WEBP, at most 10 MiB. Files must belong to the same observation.
-The response contains four class probabilities, their mean result, recommendation,
-model version and processing time. Errors return `error_code`, `error_message`,
-`request_id`. Readiness: `/v1/ready`; authenticated metadata: `/v1/model/info`;
-authenticated API schema: `/openapi.json`. BE owns authorization, images and history.
+## 1. Prepare local files
 
-The supplied CVIO checkpoint is `HISTORICAL_NONFINAL`, not an official proposed
-release. Its weights are unchanged; `field_validated=false`. Background removal
-is a separate input adapter. Model identity and preprocessing are included in metadata.
+Install Git and Docker Desktop with Docker Compose. Clone this repository and open a terminal in its root directory. Python is only needed if you run the services outside Docker.
 
-Classification checks: `python -m pytest -q`, `python -m ruff check classification`,
-`python -m ruff format --check classification`.
+Ask the team for the approved model files and database configuration. These files are not downloaded automatically:
 
-## RAG service
+| File or resource | Required for |
+|---|---|
+| `classification/models/cvio-classification.pt` | Classification; use the supplied checkpoint, renamed to this filename |
+| `classification/models/u2net.onnx` | Only when `BACKGROUND_REMOVAL=true` |
+| PostgreSQL with pgvector and the RAG schema | RAG startup, document indexing and retrieval |
+| Gemini API key | RAG embeddings and answers |
 
-Use a separate virtual environment and `.env` inside `rag/`; the two services pin
-different FastAPI and Pydantic versions. Run RAG commands from that directory:
+Classification checks the model file hashes at startup. Renaming another checkpoint will not make it compatible. The supplied checkpoint is a historical candidate, not an official final release; see `NOTICE` for its identity.
+
+The imported RAG snapshot does not contain the migrations referenced in its README. Get the matching schema setup from the RAG maintainer before using a new database. For answers based on project documents, the database also needs indexed documents.
+
+## 2. Configure each service
+
+Create the following files locally. Replace every `<...>` value before starting. Do not commit credentials or model files.
+
+**`classification/.env`**
+
+```dotenv
+API_KEY=<private-key-with-at-least-32-ASCII-characters>
+ALLOW_HISTORICAL_CANDIDATE=true
+BACKGROUND_REMOVAL=false
+MAX_IMAGE_PIXELS=20000000
+RATE_LIMIT_PER_MINUTE=60
+TORCH_NUM_THREADS=2
+```
+
+`ALLOW_HISTORICAL_CANDIDATE=true` explicitly enables the supplied candidate checkpoint. `BACKGROUND_REMOVAL=false` passes the image to native model preprocessing without U²-Net. Set it to `true` only if you want that input adapter and have the approved `u2net.onnx` file.
+
+**`rag/.env`**
+
+```dotenv
+APP_ENV=development
+INTERNAL_API_KEY=<private-shared-key>
+GEMINI_API_KEY=<your-gemini-api-key>
+GEMINI_EMBEDDING_MODEL=models/gemini-embedding-2
+GEMINI_LLM_MODEL=gemini-3.6-flash
+DATABASE_URL=<verified-postgresql-connection-url>
+```
+
+Use the embedding configuration that matches the existing index. The current code produces 768-dimensional vectors. If Docker cannot reach an IPv6-only Supabase database address, use the project's verified session pooler URL on port `5432`. Obtain that URL from the team or Supabase's Connect dialog.
+
+## 3. Run with Docker
+
+Run these commands from the repository root:
+
+```powershell
+docker compose config --quiet
+docker compose up --build -d --wait --wait-timeout 180
+docker compose ps
+```
+
+Both containers should show `healthy` under the `smartshrimp-ai` project.
+
+| Service | Local URL | Health check | Request authentication |
+|---|---|---|---|
+| Classification | `http://localhost:8080` | `GET /v1/ready` | `X-API-Key` |
+| RAG | `http://localhost:8000` | `GET /v1/health` | `X-Internal-Key` |
+
+Useful commands:
+
+```powershell
+docker compose logs -f classification rag
+docker compose up --build -d --wait classification
+docker compose up --build -d --wait rag
+docker compose stop
+docker compose down
+```
+
+The individual `up` commands start or update one service. After changing its `.env`, run `docker compose up -d --wait <service>`. Model files, documents and logs remain on the host when containers are removed. Stop a locally running service before starting Docker on the same port.
+
+## 4. Connect the backend
+
+Set these values in `smartshrimp_be/.env`:
+
+```dotenv
+AI_SERVICE_URL=http://localhost:8080
+AI_API_KEY=<same-value-as-classification-API_KEY>
+RAG_SERVICE_URL=http://localhost:8000
+RAG_INTERNAL_API_KEY=<same-value-as-rag-INTERNAL_API_KEY>
+```
+
+These URLs assume the backend runs on the host. A backend container needs a reachable Docker hostname and network instead of `localhost`.
+
+**Classification:** `POST /v1/diagnose` accepts 1–5 JPEG, PNG or WebP files in the multipart field `images`. Each file must be at least 224 × 224 pixels and at most 10 MiB. Send images from the same observation together. The response includes the top class, confidence, all four probabilities, recommendation, model version and processing time.
+
+The class identifiers are `Healthy`, `BG`, `WSSV` and `WSSV_BG`. The service always chooses from these four classes; it does not verify whether the image contains a shrimp. For several images, it averages their class probabilities. Model metadata is available at `GET /v1/model/info`, and the API schema at `GET /openapi.json`; both require `X-API-Key`.
+
+**RAG:** `POST /v1/chat` accepts a question and user context from the backend. It returns the answer, retrieved sources and query status. Local API documentation is available at `http://localhost:8000/docs` when `APP_ENV` is not `production`. See [rag/README.md](rag/README.md) for ingestion and request details.
+
+## Local development and tests
+
+Use separate virtual environments: classification uses Python 3.12, while the RAG Docker image uses Python 3.11. The commands below use PowerShell and the Windows Python launcher. On macOS or Linux, use `python3.12` or `python3.11` to create the environment and `.venv/bin/python` to run it.
+
+From the repository root, open one terminal for classification:
+
+```powershell
+Set-Location classification
+py -3.12 -m venv .venv
+.venv/Scripts/python.exe -m pip install -c constraints.txt -r requirements-dev.txt
+.venv/Scripts/python.exe -m pytest -q
+.venv/Scripts/python.exe -m ruff check .
+.venv/Scripts/python.exe -m ruff format --check .
+.venv/Scripts/python.exe -m uvicorn classification.app:create_app --app-dir .. --factory --host 127.0.0.1 --port 8080 --workers 1
+```
+
+Open another terminal at the repository root for RAG:
 
 ```powershell
 Set-Location rag
-python -m venv .venv
+py -3.11 -m venv .venv
 .venv/Scripts/python.exe -m pip install -r requirements.txt
-Copy-Item .env.example .env
-# Fill in the database URL, Gemini key and shared internal key before starting.
+.venv/Scripts/python.exe -m pytest -q
 .venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Alternatively, from the repository root:
-`docker compose -p smartshrimp-rag -f rag/docker-compose.yml up --build -d`.
-RAG uses port 8000; classification uses port 8080. Configure the backend with
-`RAG_SERVICE_URL=http://localhost:8000` and matching `RAG_INTERNAL_API_KEY`.
-Run RAG tests from `rag/` with `.venv/Scripts/python.exe -m pytest -q`.
-PostgreSQL integration tests require explicit opt-in and a prepared development DB.
+Classification's checkpoint test skips when the local weights are missing. RAG database integration tests require explicit opt-in and a prepared development database. CI runs the two modules in separate jobs.
 
-The imported snapshot is `430c5c809352c7bf798af098c6e38b12f9113413` on `main`.
-Its README references `migrations/` and `scripts/migrate_documents.py`, but those
-files are absent from that snapshot. Obtain the matching schema setup from the
-RAG maintainer before starting against a new database. See `rag/NOTICE` for origin
-and license metadata; classification's AGPL notice does not relicense this module.
+## Source and licenses
 
-For a fresh clone, first add the source remote:
-`git remote add rag-upstream https://github.com/phamquoctu-se/rag-al.git`.
-Fetch future changes from `rag-upstream`. Keep the original history:
-`git subtree pull --prefix=rag rag-upstream main` (without `--squash`).
+Classification reuses the supplied checkpoint and the native inference workflow from [CVIO](https://github.com/hntnhan1111-ayai/CVio_Shrimp_Disease_Classification_Capstone_SU26), with integration details in [NOTICE](NOTICE). Classification integration is covered by AGPL-3.0; see [LICENSE](LICENSE) and [third-party notices](classification/THIRD_PARTY_NOTICES).
+
+RAG comes from `phamquoctu-se/rag-al` at commit `430c5c809352c7bf798af098c6e38b12f9113413`. Its imported snapshot has no license file; classification's license does not relicense it. See [rag/NOTICE](rag/NOTICE).
+
+To bring in future RAG changes while keeping the member's history:
+
+```powershell
+git remote add rag-upstream https://github.com/phamquoctu-se/rag-al.git
+git subtree pull --prefix=rag rag-upstream main
+```
+
+Add the remote only once. Review and test incoming changes before pushing. Do not use `--squash` for this subtree.
