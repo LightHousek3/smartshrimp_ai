@@ -30,12 +30,12 @@ Install Git and Docker Desktop with Docker Compose. Clone this repository and op
 
 Ask the team for the approved model files and database configuration. These files are not downloaded automatically:
 
-| File or resource | Required for |
-|---|---|
+| File or resource                               | Required for                                                          |
+| ---------------------------------------------- | --------------------------------------------------------------------- |
 | `classification/models/cvio-classification.pt` | Classification; use the supplied checkpoint, renamed to this filename |
-| `classification/models/u2net.onnx` | Only when `BACKGROUND_REMOVAL=true` |
-| PostgreSQL with pgvector and the RAG schema | RAG startup, document indexing and retrieval |
-| Gemini API key | RAG embeddings and answers |
+| `classification/models/u2net.onnx`             | Only when `BACKGROUND_REMOVAL=true`                                   |
+| PostgreSQL with pgvector and the RAG schema    | RAG startup, document indexing and retrieval                          |
+| Gemini API key                                 | RAG embeddings and answers                                            |
 
 Classification checks the model file hashes at startup. Renaming another checkpoint will not make it compatible. The supplied checkpoint is a historical candidate, not an official final release; see `NOTICE` for its identity.
 
@@ -83,10 +83,10 @@ docker compose ps
 
 Both containers should show `healthy` under the `smartshrimp-ai` project.
 
-| Service | Local URL | Health check | Request authentication |
-|---|---|---|---|
-| Classification | `http://localhost:8080` | `GET /v1/ready` | `X-API-Key` |
-| RAG | `http://localhost:8000` | `GET /v1/health` | `X-Internal-Key` |
+| Service        | Local URL               | Health check     | Request authentication |
+| -------------- | ----------------------- | ---------------- | ---------------------- |
+| Classification | `http://localhost:8080` | `GET /v1/ready`  | `X-API-Key`            |
+| RAG            | `http://localhost:8000` | `GET /v1/health` | `X-Internal-Key`       |
 
 Useful commands:
 
@@ -115,13 +115,13 @@ These URLs assume the backend runs on the host. A backend container needs a reac
 
 **Classification:** `POST /v1/diagnose` accepts 1–5 JPEG, PNG or WebP files in the multipart field `images`. Each file must be at least 224 × 224 pixels and at most 10 MiB. Send images from the same observation together. The response includes the top class, confidence, all four probabilities, recommendation, model version and processing time.
 
-The class identifiers are `Healthy`, `BG`, `WSSV` and `WSSV_BG`. The service always chooses from these four classes; it does not verify whether the image contains a shrimp. For several images, it averages their class probabilities. Model metadata is available at `GET /v1/model/info`, and the API schema at `GET /openapi.json`; both require `X-API-Key`.
+The class identifiers are `Healthy`, `BG`, `WSSV` and `WSSV_BG`. For several images, the classifier averages their class probabilities. The backend applies the recognition policy to the highest mean probability: below 80% is `UNRECOGNIZED`, while 80% or above is `RECOGNIZED`. An unrecognized result has a null public `predictedLabel`; the original four probabilities remain available. This is a confidence rule, not a shrimp detector or a guarantee that the image belongs to a supported class.
 
 **RAG:** `POST /v1/chat` accepts a question and user context from the backend. It returns the answer, retrieved sources and query status. Local API documentation is available at `http://localhost:8000/docs` when `APP_ENV` is not `production`. See [rag/README.md](rag/README.md) for ingestion and request details.
 
 ## Local development and tests
 
-Use separate virtual environments: classification uses Python 3.12, while the RAG Docker image uses Python 3.11. The commands below use PowerShell and the Windows Python launcher. On macOS or Linux, use `python3.12` or `python3.11` to create the environment and `.venv/bin/python` to run it.
+Both Docker images and CI jobs use Python 3.12.12. Keep separate virtual environments because the services have different dependency versions. The commands below use PowerShell and the Windows Python launcher. On macOS or Linux, use `python3.12` to create the environment and `.venv/bin/python` to run it.
 
 From the repository root, open one terminal for classification:
 
@@ -139,7 +139,7 @@ Open another terminal at the repository root for RAG:
 
 ```powershell
 Set-Location rag
-py -3.11 -m venv .venv
+py -3.12 -m venv .venv
 .venv/Scripts/python.exe -m pip install -r requirements.txt
 .venv/Scripts/python.exe -m pytest -q
 .venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
@@ -152,12 +152,3 @@ Classification's checkpoint test skips when the local weights are missing. RAG d
 Classification reuses the supplied checkpoint and the native inference workflow from [CVIO](https://github.com/hntnhan1111-ayai/CVio_Shrimp_Disease_Classification_Capstone_SU26), with integration details in [NOTICE](NOTICE). Classification integration is covered by AGPL-3.0; see [LICENSE](LICENSE) and [third-party notices](classification/THIRD_PARTY_NOTICES).
 
 RAG comes from `phamquoctu-se/rag-al` at commit `430c5c809352c7bf798af098c6e38b12f9113413`. Its imported snapshot has no license file; classification's license does not relicense it. See [rag/NOTICE](rag/NOTICE).
-
-To bring in future RAG changes while keeping the member's history:
-
-```powershell
-git remote add rag-upstream https://github.com/phamquoctu-se/rag-al.git
-git subtree pull --prefix=rag rag-upstream main
-```
-
-Add the remote only once. Review and test incoming changes before pushing. Do not use `--squash` for this subtree.

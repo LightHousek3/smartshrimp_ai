@@ -284,6 +284,9 @@ Các test semantic chunking sử dụng embedding giả, không gọi Gemini th�
 Chạy từ thư mục gốc `smartshrimp_ai/`. Compose chung quản lý hai service
 `classification` và `rag`; có thể chỉ khởi động RAG bằng lệnh sau:
 
+Hai image dùng Python 3.12.12. Khi chạy local, dùng Python 3.12 và virtual
+environment riêng trong `rag/`; không cài chung dependency với classification.
+
 ```powershell
 docker compose up --build -d --wait rag
 ```
