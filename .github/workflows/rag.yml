@@ -1,0 +1,27 @@
+name: RAG
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: rag
+    env:
+      INTERNAL_API_KEY: ci-unused-internal-key
+      GEMINI_API_KEY: ci-unused-gemini-key
+      RAG_DB_INTEGRATION: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: rag/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pip check
+      - run: python -m compileall -q app
+      - run: python -m pytest -q

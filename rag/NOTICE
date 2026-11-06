@@ -1,0 +1,17 @@
+SmartShrimp RAG service
+
+Source: https://github.com/phamquoctu-se/rag-al
+Branch: main
+Imported commit: 430c5c809352c7bf798af098c6e38b12f9113413
+Original author: Phạm Quốc Tự <quoctu.se@gmail.com>
+
+The five upstream commits are retained without changing their SHA or authorship.
+The upstream snapshot does not include a LICENSE file. This notice records
+provenance and does not assign a new license to the RAG module.
+
+Monorepo integration changes:
+- Separate RAG CI and virtual environment from classification dependencies.
+- Add a Docker context exclusion list for secrets, local data and test artifacts.
+- Bind the local Compose port to loopback and use Python for the health check.
+
+Application code and API contracts are unchanged by the import.

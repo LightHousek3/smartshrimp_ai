@@ -23,3 +23,13 @@ Original MIT copyright/license for reused portions is retained in
 classification/THIRD_PARTY_NOTICES. The combined integration source is provided
 under AGPL-3.0. This does not relicense third-party weights or datasets.
 The project owner confirmed CVIO permission for use of code, weights and data.
+
+RAG module (rag/):
+Source: https://github.com/phamquoctu-se/rag-al
+Branch: main
+Imported commit: 430c5c809352c7bf798af098c6e38b12f9113413
+Original author: Phạm Quốc Tự <quoctu.se@gmail.com>
+Imported with the original commits and authorship unchanged.
+The upstream snapshot contains no LICENSE file. No new license is assigned to
+rag/ by this import; the classification integration terms above do not relicense
+the RAG source. See rag/NOTICE for subsequent integration changes.
