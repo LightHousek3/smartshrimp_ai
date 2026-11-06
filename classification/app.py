@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 ERRORS = {code: {"model": ErrorResponse} for code in (401, 422, 429, 500, 503)}
 RECOMMENDATIONS = {
-    "Healthy": "Ảnh chưa cho thấy dấu hiệu thuộc các nhóm bệnh trong mô hình. Tiếp tục theo dõi sức khỏe tôm và chất lượng nước.",
+    "Healthy": "Tiếp tục theo dõi sức khỏe tôm và duy trì chất lượng nước phù hợp.",
     "BG": "Ảnh có dấu hiệu phù hợp nhóm mang đen (BG). KTV cần kiểm tra thực tế và tham khảo chuyên gia.",
     "WSSV": "Ảnh có dấu hiệu phù hợp nhóm đốm trắng (WSSV). Cần kiểm tra chuyên môn và xét nghiệm xác nhận khi phù hợp.",
     "WSSV_BG": "Ảnh có dấu hiệu thuộc nhóm kết hợp WSSV/BG. Cần kiểm tra chuyên môn để xác định nguyên nhân thực tế.",

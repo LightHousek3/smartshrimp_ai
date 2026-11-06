@@ -92,6 +92,30 @@ def test_response_contract(client, image, count):
     assert response.headers["Cache-Control"] == "no-store"
 
 
+@pytest.mark.parametrize("winner", CLASSES)
+def test_preserves_classifier_label_without_confidence_rejection(
+    client, image, monkeypatch, winner
+):
+    predictions = [
+        {"label": winner, "probability": 0.4},
+        *({"label": label, "probability": 0.2} for label in CLASSES if label != winner),
+    ]
+    monkeypatch.setattr(client.app.state.classifier, "diagnose", lambda uploads: predictions)
+    response = client.post(
+        "/v1/diagnose", headers=HEADERS, files=[("images", ("x.png", image, "image/png"))]
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["predicted_label"] == winner
+    assert body["confidence"] == 0.4
+    assert body["predictions"] == predictions
+    if winner == "Healthy":
+        assert body["recommendation"] == (
+            "Tiếp tục theo dõi sức khỏe tôm và duy trì chất lượng nước phù hợp. "
+            "Kết quả AI chỉ mang tính hỗ trợ."
+        )
+
+
 def test_upload_count_fields_and_content_type(client, image):
     good = ("images", ("x.png", image, "image/png"))
     for files, data in [
