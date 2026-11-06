@@ -1,16 +1,15 @@
+name: smartshrimp-ai
+
 services:
   classification:
     build:
       context: .
       dockerfile: classification/Dockerfile
+    env_file:
+      - ./classification/.env
     environment:
-      API_KEY: ${API_KEY:?Set API_KEY in the private .env file}
       MODEL_DIR: /service/models
-      ALLOW_HISTORICAL_CANDIDATE: ${ALLOW_HISTORICAL_CANDIDATE:-false}
-      BACKGROUND_REMOVAL: ${BACKGROUND_REMOVAL:-false}
-      MAX_IMAGE_PIXELS: ${MAX_IMAGE_PIXELS:-20000000}
-      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
-      TORCH_NUM_THREADS: ${TORCH_NUM_THREADS:-2}
+      RUNTIME_DIR: /tmp/runtime
     volumes:
       - ./classification/models:/service/models:ro
     ports:
@@ -23,3 +22,22 @@ services:
     cap_drop:
       - ALL
     init: true
+    restart: unless-stopped
+
+  rag:
+    build:
+      context: ./rag
+    env_file:
+      - ./rag/.env
+    volumes:
+      - ./rag/data:/app/data:ro
+      - ./rag/logs:/app/logs
+    ports:
+      - "127.0.0.1:8000:8000"
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/v1/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

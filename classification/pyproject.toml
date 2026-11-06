@@ -1,6 +1,6 @@
 [tool.pytest.ini_options]
-testpaths = ["classification/tests"]
-pythonpath = ["."]
+testpaths = ["tests"]
+pythonpath = [".."]
 cache_dir = ".local/pytest-cache"
 markers = ["integration: requires local checkpoint assets"]
 
@@ -12,3 +12,6 @@ cache-dir = ".local/ruff-cache"
 [tool.ruff.lint]
 select = ["E", "F", "I"]
 ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["classification"]

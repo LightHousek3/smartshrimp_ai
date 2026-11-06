@@ -79,13 +79,7 @@ pip install -r requirements.txt
 
 ## 3. Cấu hình môi trường
 
-Sao chép file mẫu:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-Cập nhật tối thiểu các biến sau:
+Tạo file riêng `rag/.env`, không commit. Cập nhật tối thiểu các biến sau:
 
 ```env
 INTERNAL_API_KEY=replace-with-a-long-random-secret
@@ -287,8 +281,11 @@ Các test semantic chunking sử dụng embedding giả, không gọi Gemini th�
 
 ## 9. Chạy bằng Docker
 
+Chạy từ thư mục gốc `smartshrimp_ai/`. Compose chung quản lý hai service
+`classification` và `rag`; có thể chỉ khởi động RAG bằng lệnh sau:
+
 ```powershell
-docker compose up --build -d
+docker compose up --build -d --wait rag
 ```
 
 Xem log:
@@ -300,18 +297,16 @@ docker compose logs -f rag
 Dừng service:
 
 ```powershell
-docker compose down
+docker compose stop rag
 ```
 
-> Healthcheck trong `docker-compose.yml` đang dùng lệnh `curl`, nhưng Docker image
-> hiện chưa cài `curl`. Container có thể phục vụ bình thường nhưng bị Docker đánh dấu
-> `unhealthy`; cần bổ sung `curl` vào image hoặc đổi healthcheck sang Python trước khi
-> dùng cấu hình này ở production.
+Healthcheck trong Compose gốc gọi `/v1/health` bằng Python. Cổng local là `8000`;
+classification dùng cổng `8080`. Không cần cài `curl` trong image.
 
 ## 10. Cấu trúc thư mục
 
 ```text
-smartshrimp_rag/
+smartshrimp_ai/rag/
 ├── app/
 │   ├── api/v1/endpoints/     # Health và chat endpoints
 │   ├── core/                 # Embedder, retriever, generator, pipeline
@@ -322,10 +317,8 @@ smartshrimp_rag/
 │   ├── dependencies.py       # X-Internal-Key guard
 │   └── main.py               # FastAPI application
 ├── data/documents/           # Tài liệu nguồn, không commit
-├── migrations/               # Migration cho document_chunks
 ├── tests/                    # Unit và API tests
-├── .env.example
-├── docker-compose.yml
+├── .env                      # Cấu hình local, không commit
 ├── Dockerfile
 └── requirements.txt
 ```
@@ -375,7 +368,7 @@ RAG service không xác thực JWT và không nên được mobile/web gọi tr�
 
 Hai service phải dùng cùng một internal key.
 
-Trong `smartshrimp_rag/.env`:
+Trong `smartshrimp_ai/rag/.env`:
 
 ```env
 INTERNAL_API_KEY=a-long-random-shared-secret

@@ -4,13 +4,16 @@ from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parent.parent
+MODULE_DIR = Path(__file__).resolve().parent
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=ROOT / ".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=MODULE_DIR / ".env", env_file_encoding="utf-8", extra="ignore"
+    )
     api_key: SecretStr
-    model_dir: Path = ROOT / "classification/models"
-    runtime_dir: Path = ROOT / "classification/.runtime"
+    model_dir: Path = MODULE_DIR / "models"
+    runtime_dir: Path = MODULE_DIR / ".runtime"
     allow_historical_candidate: bool = False
     background_removal: bool = False
     max_image_pixels: int = Field(default=20_000_000, ge=224 * 224, le=50_000_000)
