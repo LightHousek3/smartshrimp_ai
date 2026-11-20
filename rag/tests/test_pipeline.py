@@ -1,6 +1,8 @@
-﻿"""Unit tests for RAG pipeline logic."""
+"""Unit tests for RAG pipeline logic."""
+
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 
 from app.core.pipeline import run_rag_pipeline
 from app.db.vector_store import DocumentChunk
@@ -18,6 +20,7 @@ def make_chunk(similarity: float, content: str = "Nội dung chunk mẫu") -> Do
 
 
 # ── Normal Cases ──────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_answered_when_similarity_above_threshold():
@@ -42,6 +45,7 @@ async def test_answered_when_similarity_above_threshold():
 
 
 # ── Abnormal Cases ────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_low_match_when_similarity_below_threshold():
@@ -121,6 +125,7 @@ async def test_error_when_llm_fails():
 
 # ── Boundary Cases ────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_similarity_exactly_at_threshold():
     """B-01: similarity = threshold chính xác → answered (>= threshold)"""
@@ -144,10 +149,11 @@ async def test_custom_top_k_is_passed_to_retriever():
     with (
         patch("app.core.pipeline.embed_text", new_callable=AsyncMock) as mock_embed,
         patch("app.core.pipeline.retrieve", new_callable=AsyncMock) as mock_retrieve,
+        patch("app.core.pipeline.generate_answer", new=AsyncMock(return_value=("Answer", "model"))),
     ):
         mock_embed.return_value = [0.1] * 768
         mock_retrieve.return_value = []
 
-        await run_rag_pipeline("Câu hỏi", top_k=10)
+        await run_rag_pipeline("Câu hỏi", top_k=10, eligible_documents=[])
 
-        mock_retrieve.assert_called_once_with([0.1] * 768, top_k=10)
+        mock_retrieve.assert_called_once_with([0.1] * 768, top_k=10, eligible_documents=[])

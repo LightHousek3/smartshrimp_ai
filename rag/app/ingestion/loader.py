@@ -1,12 +1,22 @@
-﻿from pathlib import Path
-from dataclasses import dataclass
+﻿from dataclasses import dataclass
+from pathlib import Path
+
+from app.ingestion.sanitize import sanitize_text
+from app.utils.logger import logger
 
 
 @dataclass
 class RawDocument:
-    source_file: str   # basename, e.g. "ky_thuat_nuoi_tom.pdf"
-    content: str       # full extracted text
-    metadata: dict     # e.g. {"pages": 42, "format": "pdf"}
+    source_file: str  # basename, e.g. "ky_thuat_nuoi_tom.pdf"
+    content: str  # full extracted text
+    metadata: dict  # e.g. {"pages": 42, "format": "pdf"}
+
+    @property
+    def embedding_title(self) -> str:
+        """Use the logical document title, never its managed storage UUID."""
+        return (
+            self.metadata.get("title") or self.metadata.get("original_filename") or self.source_file
+        )
 
 
 def load_pdf(file_path: Path) -> RawDocument:
@@ -53,27 +63,22 @@ def load_markdown(file_path: Path) -> RawDocument:
 
 
 def load_document(file_path: Path) -> RawDocument:
-    """Auto-detect file type and load accordingly."""
+    """Load and sanitize text once, before chunking, embedding and persistence."""
     suffix = file_path.suffix.lower()
     if suffix == ".pdf":
-        return load_pdf(file_path)
-    elif suffix in (".docx", ".doc"):
-        return load_docx(file_path)
+        doc = load_pdf(file_path)
+    elif suffix == ".docx":
+        doc = load_docx(file_path)
     elif suffix in (".md", ".txt"):
-        return load_markdown(file_path)
+        doc = load_markdown(file_path)
     else:
         raise ValueError(f"Unsupported file format: {suffix}")
-
-
-def load_directory(directory: Path) -> list[RawDocument]:
-    """
-    Load all supported documents from a directory (non-recursive).
-    Supported formats: .pdf, .docx, .md, .txt
-    """
-    supported = {".pdf", ".docx", ".doc", ".md", ".txt"}
-    docs = []
-    for file_path in sorted(directory.iterdir()):
-        if file_path.is_file() and file_path.suffix.lower() in supported:
-            doc = load_document(file_path)
-            docs.append(doc)
-    return docs
+    cleaned = sanitize_text(doc.content)
+    if cleaned != doc.content:
+        logger.warning(
+            "Sanitized extracted text (input_chars={}, output_chars={})",
+            len(doc.content),
+            len(cleaned),
+        )
+    doc.content = cleaned
+    return doc

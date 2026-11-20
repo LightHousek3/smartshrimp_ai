@@ -11,18 +11,18 @@ router = APIRouter()
 @router.post(
     "",
     response_model=ChatResponse,
-    summary="Gui cau hoi toi RAG pipeline",
+    summary="Submit question to RAG pipeline",
     description=(
-        "Nhan cau hoi tu KTV (qua smartshrimp_be), chay toan bo pipeline "
-        "embed -> retrieve -> generate, tra ket qua de BE luu vao rag_queries."
+        "Receive question from technician (via smartshrimp_be), run the full "
+        "pipeline (embed -> retrieve -> generate), and return result for BE to save into rag_queries."
     ),
     dependencies=[Depends(verify_internal_key)],
 )
 async def chat(request: ChatRequest) -> ChatResponse:
     """
-    UC-21: Gui cau hoi toi Chatbox
-    - Chi smartshrimp_be duoc goi endpoint nay (internal API key guard)
-    - KTV identity duoc xac thuc phia BE truoc khi goi sang day
+    Submit question to chatbox.
+    - Only smartshrimp_be can call this endpoint (internal API key guard).
+    - Technician identity is authenticated on the BE side before reaching here.
     """
     logger.info(
         f"Chat request | user_id={request.user_id} "
@@ -33,8 +33,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
     response = await run_rag_pipeline(
         question=request.question,
         top_k=request.top_k,
-        **({"eligible_documents": [doc.model_dump(mode="json") for doc in request.eligible_documents]}
-           if request.eligible_documents is not None else {}),
+        eligible_documents=[
+            doc.model_dump(mode="json") for doc in (request.eligible_documents or [])
+        ],
     )
 
     logger.info(

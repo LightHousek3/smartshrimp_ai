@@ -2,11 +2,11 @@
 
 ## API nạp tài liệu từ admin
 
-Backend cung cấp CRUD `/api/v1/admin/rag/documents` (Bearer token ADMIN ACTIVE). Upload multipart cần `file` và `title`, tối đa 10 MiB, PDF/DOCX/MD/TXT; bản gốc lưu Cloudinary authenticated raw. Upload trả 202 và worker bền trong PostgreSQL xử lý nền. Xem [contract đầy đủ](../smartshrimp_be/docs/admin-rag-documents-api.md).
+Admin quản lý tài liệu qua BE tại `/api/v1/admin/rag/documents` (Bearer token ADMIN ACTIVE). BE cấp upload intent để browser tải file lên Cloudinary rồi xác nhận upload và xếp hàng ingestion. File tối đa 10 MiB, định dạng PDF/DOCX/MD/TXT. Xem [quy ước tài liệu BE](../../smartshrimp_be/docs/rag-document-conventions.md).
 
-RAG cung cấp endpoint nội bộ `POST /v1/documents/{uuid}/ingest` với query `filename`, `title`, `attempt`, header `X-Internal-Key` và body binary `application/octet-stream`; xóa vectors qua `DELETE /v1/documents/{uuid}/vectors`. Dùng chung loader/chunking/embedding với CLI, thay vectors trong transaction. Attempt, advisory lock và tombstone ngăn trùng hoặc index đến muộn sau xóa. File tạm được dọn sau xử lý. Endpoint legacy `POST /v1/documents` vẫn giữ cho nguồn không được quản lý.
+RAG chỉ nhận tài liệu managed từ BE qua `POST /v1/documents/{uuid}/ingest` với query `filename`, `title`, `attempt`, header `X-Internal-Key` và body binary `application/octet-stream`; xóa vectors qua `DELETE /v1/documents/{uuid}/vectors`. Attempt, advisory lock, transaction và tombstone bảo vệ index. File tạm được dọn sau xử lý. API legacy `POST /v1/documents` và CLI local đã bị loại bỏ.
 
-Chạy `python scripts/migrate_documents.py` để áp dụng `002_managed_document_indexes.sql` sau migration 001. Chỉ khi chủ ý reset DEV mới thêm `--reset-legacy`. Backend dùng `RAG_INGESTION_TIMEOUT_MS` (mặc định 300000 ms). Chat gửi danh sách UUID/attempt READY và active, được lọc trước top-K. Thiếu danh sách chỉ truy xuất nguồn legacy; danh sách rỗng không truy xuất tài liệu quản lý. Chạy test bằng `python -m pytest -q`; đặt `RAG_DB_INTEGRATION=1` cho test DB thật có rollback fixture.
+Schema vector dùng các migration 001/002 trong `DoAn/migrations/`. Backend dùng `RAG_INGESTION_TIMEOUT_MS` (mặc định 300000 ms). Chat gửi danh sách UUID/attempt READY và active, được lọc trước top-K. Danh sách thiếu, null hoặc rỗng không cho phép truy xuất tài liệu nào; không còn truy xuất legacy. Thay đổi này không xóa vector đã lưu. Chạy test bằng `python -m pytest -q`; đặt `RAG_DB_INTEGRATION=1` chỉ khi đã xác minh DB DEV/test.
 
 Microservice FastAPI cung cấp chức năng hỏi đáp kỹ thuật nuôi tôm bằng
 Retrieval-Augmented Generation (RAG). Service đọc tài liệu chuyên môn, chia tài liệu
@@ -45,8 +45,27 @@ Câu hỏi → Query embedding → Top-K chunks → Gemini LLM → Câu trả l�
 | Vector store | PostgreSQL với extension `pgvector` |
 | Database client | `asyncpg` |
 | Đọc tài liệu | `pypdf`, `python-docx` |
-| Chunking | Semantic chunking; recursive character splitting là chế độ dự phòng |
+| Chunking | Semantic chunking |
 | Kiểm thử | `pytest`, `pytest-asyncio`, `httpx` |
+
+Embedding 2 dùng chỉ dẫn trực tiếp trong text, không gửi `task_type`:
+
+- Câu hỏi: `task: question answering | query: {câu hỏi}`.
+- Chunk cuối: `title: {tên tài liệu} | text: {nội dung}`.
+- Semantic unit: nội dung thuần, không thêm title hoặc prefix truy xuất.
+- Tên tài liệu ưu tiên title của Admin, rồi tên file gốc.
+
+Model cấu hình và output 768 chiều được giữ nguyên. Vector đã tạo bằng định dạng
+cũ cần được re-embed trước khi dùng với query mới; thay đổi code không tự re-embed.
+
+Semantic units được embed theo batch 32, chunks cuối theo batch 16 phần tử,
+giữ thứ tự vector tương ứng với input. Với 200 chunks cuối, bước này gọi SDK
+13 lần; số request tìm ranh giới semantic được tính riêng. Chỉ ghi index sau khi
+tất cả batch hoàn thành; lỗi ở một batch không ghi dữ liệu dở dang.
+
+Ingestion luôn dùng semantic chunking; không còn cấu hình chọn strategy.
+Điều chỉnh bằng `MIN_CHUNK_SIZE`, `MAX_CHUNK_SIZE`, `CHUNK_OVERLAP` và
+`SEMANTIC_BREAKPOINT_PERCENTILE`.
 
 ---
 
@@ -57,7 +76,7 @@ Câu hỏi → Query embedding → Top-K chunks → Gemini LLM → Câu trả l�
 - Python 3.11 được khuyến nghị.
 - PostgreSQL có extension `pgvector`.
 - Gemini API key.
-- Tài liệu kiến thức ở định dạng `.pdf`, `.docx`, `.doc`, `.md` hoặc `.txt`.
+- Tài liệu kiến thức ở định dạng `.pdf`, `.docx`, `.md` hoặc `.txt`.
 
 ## 2. Cài đặt
 
@@ -82,10 +101,13 @@ pip install -r requirements.txt
 Tạo file riêng `rag/.env`, không commit. Cập nhật tối thiểu các biến sau:
 
 ```env
+APP_ENV=development
 INTERNAL_API_KEY=replace-with-a-long-random-secret
-GEMINI_API_KEY=your-gemini-api-key
+GEMINI_INGESTION_API_KEY=your-ingestion-api-key
+GEMINI_QUERY_API_KEY=your-query-api-key
 GEMINI_EMBEDDING_MODEL=models/gemini-embedding-2
-GEMINI_LLM_MODEL=gemini-3.6-flash
+GEMINI_LLM_MODEL=gemini-3.5-flash-lite
+GEMINI_FALLBACK_MODELS=["gemini-3.1-flash-lite"]
 DATABASE_URL=postgresql://postgres:password@localhost:5432/smartshrimp
 ```
 
@@ -96,26 +118,63 @@ DATABASE_URL=postgresql://postgres:password@localhost:5432/smartshrimp
 
 | Biến | Mặc định | Ý nghĩa |
 |---|---:|---|
-| `APP_ENV` | `development` | Môi trường chạy. Swagger bị tắt khi đặt là `production`. |
-| `APP_HOST` | `0.0.0.0` | Host cấu hình của ứng dụng. |
-| `APP_PORT` | `8000` | Cổng cấu hình của ứng dụng. |
+| `APP_ENV` | `development` | Vẫn bắt buộc khai báo rõ khi startup; `production` tắt Swagger. |
 | `APP_VERSION` | `1.0.0` | Phiên bản trả về ở health check. |
-| `INTERNAL_API_KEY` | `change-me-in-production` | Secret bảo vệ `POST /v1/chat`. Bắt buộc đổi ngoài local. |
-| `GEMINI_API_KEY` | rỗng | API key dùng cho embedding và generation. |
+| `INTERNAL_API_KEY` | rỗng | Secret dùng chung với BE, bảo vệ các endpoint nội bộ. |
+| `GEMINI_INGESTION_API_KEY` | rỗng | Key cho semantic units và embedding chunks khi nạp tài liệu. |
+| `GEMINI_QUERY_API_KEY` | rỗng | Key cho embedding câu hỏi, đếm token và sinh câu trả lời. |
 | `GEMINI_EMBEDDING_MODEL` | `models/gemini-embedding-2` | Model embedding. |
-| `GEMINI_LLM_MODEL` | `gemini-3.6-flash` | Model sinh câu trả lời. |
+| `GEMINI_LLM_MODEL` | `gemini-3.5-flash-lite` | Model sinh câu trả lời. |
+| `GEMINI_FALLBACK_MODELS` | `["gemini-3.1-flash-lite"]` | Tối đa một fallback; tổng tối đa hai model. |
 | `DATABASE_URL` | rỗng | Chuỗi kết nối PostgreSQL. |
 | `SIMILARITY_THRESHOLD` | `0.5` | Ngưỡng similarity tối thiểu để gọi LLM. |
-| `TOP_K_DEFAULT` | `5` | Số chunk được retrieve mặc định. |
-| `CHUNKING_STRATEGY` | `semantic` | `semantic` hoặc `recursive`. |
+| `TOP_K_DEFAULT` | `3` | Số chunk được retrieve mặc định. |
 | `SEMANTIC_BREAKPOINT_PERCENTILE` | `90` | Mức percentile dùng để phát hiện điểm chuyển chủ đề. |
 | `MIN_CHUNK_SIZE` | `350` | Kích thước mục tiêu tối thiểu trước khi ngắt theo ngữ nghĩa. |
 | `MAX_CHUNK_SIZE` | `1200` | Kích thước tối đa của chunk. |
 | `CHUNK_OVERLAP` | `150` | Số ký tự tối đa của các câu hoàn chỉnh được gối sang chunk tiếp theo. |
-| `CHUNK_SIZE` | `800` | Chỉ dùng khi `CHUNKING_STRATEGY=recursive`. |
 | `MAX_CONTEXT_TOKENS` | `1048576` | Giới hạn context window của model (tokens). Prompt sẽ được cắt chunk nếu vượt. |
-| `MAX_OUTPUT_TOKENS` | `8192` | Số token tối đa cho câu trả lời. Tăng nếu câu trả lời bị cụt. |
+| `MAX_OUTPUT_TOKENS` | `2048` | Số token tối đa cho câu trả lời. Tăng nếu câu trả lời bị cụt. |
 | `LOG_LEVEL` | `DEBUG` | Mức log của service. |
+
+Startup yêu cầu `APP_ENV`, `INTERNAL_API_KEY`, `GEMINI_INGESTION_API_KEY` và `GEMINI_QUERY_API_KEY`
+đều không rỗng. Thiếu biến nào sẽ dừng trước khi kết nối DB, báo rõ tên biến;
+không in giá trị key. Không hỗ trợ key chung hoặc lấy key của luồng bên kia.
+Restart service sau khi đổi môi trường; cấu hình và client được cache trong process.
+
+### CORS
+
+Các giá trị CORS được đọc từ `.env`; danh sách dùng JSON array:
+
+```env
+CORS_ALLOW_ORIGINS=["http://localhost:3000"]
+CORS_ALLOW_CREDENTIALS=true
+CORS_ALLOW_METHODS=["POST","GET"]
+CORS_ALLOW_HEADERS=["*"]
+```
+
+Default giữ hành vi trước đây. Đặt `CORS_ALLOW_ORIGINS=[]` nếu không cần cho phép
+trình duyệt gọi khác origin. CORS là chính sách của trình duyệt, không chặn request
+BE → RAG và không thay thế `X-Internal-Key`. Không đưa internal key vào frontend.
+Thêm `DELETE` vào danh sách methods nếu cần preflight cho method đó. Restart RAG
+sau khi đổi cấu hình. Xem [tài liệu FastAPI CORS](https://fastapi.tiangolo.com/tutorial/cors/).
+
+### Deadline và retry
+
+- Chat tổng tối đa 55 giây: embed câu hỏi + retrieval có ngân sách chung 10 giây;
+  mỗi model tối đa 15 giây, bao gồm đếm token, cắt context và generation.
+- Mặc định gọi `gemini-3.5-flash-lite`, rồi fallback `gemini-3.1-flash-lite`.
+  `GEMINI_FALLBACK_MODELS` là JSON array tối đa một tên model fallback, tổng
+  tối đa hai model. Đặt `[]` để tắt fallback. Chỉ thử model tiếp theo khi lượt trước thất bại;
+  dừng ngay khi có câu trả lời hoặc hết deadline tổng.
+- `INGESTION_EMBED_TIMEOUT_SECONDS` mặc định 20 giây cho từng request embed.
+  Retry tối đa ba lần sau lần đầu, chỉ cho 503 và 429 tạm thời. Quota ngày/quota
+  bằng 0, lỗi billing, 400/401/403 và timeout không được retry.
+- SDK dùng HTTP timeout riêng cho từng request và tắt retry ngầm (`attempts=1`).
+  Embedding dùng SDK async, không chạy request trong `asyncio.to_thread`.
+  Deadline ngoài giới hạn toàn bước; HTTP timeout giới hạn request thực.
+
+Timeout SDK được truyền bằng milliseconds theo [Google Gen AI SDK](https://googleapis.github.io/python-genai/genai.html).
 
 ## 4. Khởi tạo vector store
 
@@ -135,39 +194,39 @@ Migration sẽ:
 
 ## 5. Nạp tài liệu
 
-Đặt tài liệu vào thư mục:
+CLI ingestion từ file/thư mục local đã được loại bỏ. Nạp tài liệu qua trang quản trị:
 
-```text
-data/documents/
-```
+1. Admin upload file gốc lên Cloudinary theo upload intent của BE.
+2. BE xác nhận upload và đưa tài liệu vào hàng đợi ingestion.
+3. Worker BE tải file và gửi binary đến `POST /v1/documents/{document_id}/ingest`.
+4. RAG kiểm tra/ghi nhận attempt trong transaction ngắn, trả connection về pool,
+   rồi đọc file tạm, chia chunks và tạo embeddings bên ngoài transaction.
+5. RAG lấy advisory lock lại, đọc lại state, rồi thay chunks và cập nhật index
+   atomically trong transaction ngắn nếu attempt vẫn hợp lệ.
 
-Nạp một file:
+Sau khi đọc tài liệu, `sanitize_text()` loại bỏ NUL (`U+0000`) và thay surrogate
+không hợp lệ bằng ký tự thay thế `U+FFFD`, trước cả chunking và embedding. Unicode
+tiếng Việt, emoji, khoảng trắng và Markdown/LaTeX hợp lệ được giữ nguyên. Text
+được embed cũng chính là text lưu DB; tài liệu rỗng sau làm sạch bị từ chối.
+Log làm sạch chỉ ghi số ký tự trước/sau, không ghi nội dung tài liệu.
 
-```powershell
-python -m app.ingestion.ingest --path "data/documents/tai-lieu.pdf"
-```
+Luồng managed tiếp tục dùng UUID/attempt, advisory lock và tombstone. File tạm
+được dọn sau xử lý; không cần đặt tài liệu vào thư mục local để ingest.
 
-Nạp toàn bộ file nằm trực tiếp trong một thư mục:
+`rag_index_state.attempt` ghi nhận attempt mới nhất đã được chấp nhận;
+`chunk_count=0` biểu thị attempt đó chưa hoàn tất. Nếu chuẩn bị thất bại hoặc
+bị hủy, chunks cũ còn nguyên và có thể retry cùng attempt. Attempt cũ hơn bị
+chặn kể cả khi attempt mới chưa ghi xong. Delete có thể ghi tombstone trong
+lúc embed; pha ghi bắt buộc kiểm tra lại tombstone trước khi sửa chunks.
+Hai replica có thể chuẩn bị cùng attempt, nhưng chỉ kết quả ghi đầu tiên được
+chấp nhận; request còn lại trả chunk count đã commit. Semaphore vẫn giới hạn
+chuẩn bị một tài liệu/process, không giữ connection hay SQL lock khi gọi Gemini.
 
-```powershell
-python -m app.ingestion.ingest --path data/documents
-```
+Thay đổi này không cần migration hay thay đổi BE. Rollout/rollback bằng phiên bản
+RAG tương ứng, giữ nguyên state và tombstone; không reset hoặc re-index DB.
 
-Quá trình ingest thực hiện:
-
-1. Đọc nội dung tài liệu.
-2. Chia thành các semantic unit nhỏ.
-3. Embed theo batch để tìm điểm chuyển chủ đề.
-4. Ghép thành chunk trong giới hạn `MIN_CHUNK_SIZE` và `MAX_CHUNK_SIZE`.
-5. Embed chunk hoàn chỉnh.
-6. Upsert chunk vào `document_chunks`.
-
-> Loader thư mục hiện chỉ đọc các file nằm trực tiếp trong thư mục được truyền vào,
-> không tự duyệt thư mục con. Muốn ingest tài liệu trong thư mục con, hãy gọi CLI với
-> đúng thư mục đó hoặc truyền đường dẫn từng file.
-
-> Khi thay đổi thuật toán hoặc cấu hình chunking, nên xóa vector cũ trước khi ingest
-> lại để không giữ các chunk dư từ lần ingest trước.
+Không hỗ trợ endpoint upload legacy hay CLI. Không cần mount thư mục tài liệu
+local vào Docker. Việc loại bỏ luồng cũ không xóa dữ liệu DB hay file trên máy.
 
 ## 6. Chạy service
 
@@ -226,6 +285,7 @@ Request body:
 | `conversation_id` | UUID hoặc `null` | Không | ID hội thoại; hiện dùng để log. |
 | `season_id` | UUID hoặc `null` | Không | ID vụ nuôi; hiện chưa dùng để lọc retrieval. |
 | `top_k` | integer hoặc `null` | Không | Từ 1 đến 20; bỏ trống để dùng `TOP_K_DEFAULT`. |
+| `eligible_documents` | array hoặc `null` | Không | BE cung cấp các cặp `document_id`/`attempt` của tài liệu READY + active. Thiếu/null/rỗng sẽ không truy xuất nguồn. |
 
 Response mẫu:
 
@@ -248,7 +308,7 @@ Response mẫu:
     }
   ],
   "top_similarity": 0.82,
-  "model_version": "gemini-3.6-flash",
+  "model_version": "gemini-3.5-flash-lite",
   "processing_time_ms": 2100
 }
 ```
@@ -314,12 +374,11 @@ smartshrimp_ai/rag/
 │   ├── api/v1/endpoints/     # Health và chat endpoints
 │   ├── core/                 # Embedder, retriever, generator, pipeline
 │   ├── db/                   # PostgreSQL pool và vector store
-│   ├── ingestion/            # Loader, semantic chunker, ingest CLI
+│   ├── ingestion/            # Loader, semantic chunker, API ingestion
 │   ├── models/               # Request/response schemas
 │   ├── config.py             # Environment settings
 │   ├── dependencies.py       # X-Internal-Key guard
 │   └── main.py               # FastAPI application
-├── data/documents/           # Tài liệu nguồn, không commit
 ├── tests/                    # Unit và API tests
 ├── .env                      # Cấu hình local, không commit
 ├── Dockerfile
@@ -374,6 +433,7 @@ Hai service phải dùng cùng một internal key.
 Trong `smartshrimp_ai/rag/.env`:
 
 ```env
+APP_ENV=development
 INTERNAL_API_KEY=a-long-random-shared-secret
 ```
 

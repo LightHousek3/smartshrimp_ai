@@ -6,6 +6,7 @@ import pytest
 
 from app.ingestion.chunker import chunk_document
 from app.ingestion.loader import RawDocument
+from app.utils.errors import EmbeddingError
 
 
 def make_document(content: str) -> RawDocument:
@@ -32,7 +33,7 @@ async def test_semantic_distance_creates_topic_boundary():
     ]
 
     with patch(
-        "app.ingestion.chunker.embed_document_texts",
+        "app.ingestion.chunker.embed_semantic_units",
         new=AsyncMock(return_value=embeddings),
     ) as mock_embed:
         chunks = await chunk_document(
@@ -50,6 +51,7 @@ async def test_semantic_distance_creates_topic_boundary():
     assert [chunk.chunk_index for chunk in chunks] == [0, 1]
     assert chunks[0].metadata["chunking_strategy"] == "semantic"
     mock_embed.assert_awaited_once()
+    assert mock_embed.call_args.kwargs == {}
 
 
 @pytest.mark.asyncio
@@ -64,7 +66,7 @@ async def test_max_size_forces_split_without_semantic_shift():
     )
 
     with patch(
-        "app.ingestion.chunker.embed_document_texts",
+        "app.ingestion.chunker.embed_semantic_units",
         new=AsyncMock(return_value=[[1.0, 0.0]] * 4),
     ):
         chunks = await chunk_document(
@@ -81,7 +83,7 @@ async def test_max_size_forces_split_without_semantic_shift():
 @pytest.mark.asyncio
 async def test_empty_document_does_not_request_embeddings():
     with patch(
-        "app.ingestion.chunker.embed_document_texts",
+        "app.ingestion.chunker.embed_semantic_units",
         new=AsyncMock(),
     ) as mock_embed:
         chunks = await chunk_document(make_document("  \n\n "))
@@ -101,20 +103,12 @@ async def test_invalid_semantic_limits_are_rejected():
 
 
 @pytest.mark.asyncio
-async def test_recursive_strategy_remains_available():
-    pytest.importorskip("langchain_text_splitters")
-    with (
-        patch("app.ingestion.chunker.settings") as mock_settings,
-        patch(
-            "app.ingestion.chunker.embed_document_texts",
-            new=AsyncMock(),
-        ) as mock_embed,
-    ):
-        mock_settings.chunking_strategy = "recursive"
-        mock_settings.chunk_size = 80
-        mock_settings.chunk_overlap = 10
-        chunks = await chunk_document(make_document("Nội dung hướng dẫn. " * 20))
-
-    assert len(chunks) > 1
-    assert all(chunk.metadata["chunking_strategy"] == "recursive" for chunk in chunks)
-    mock_embed.assert_not_awaited()
+async def test_semantic_embedding_failure_is_propagated():
+    content = "First topic.\n\nSecond topic."
+    with patch(
+        "app.ingestion.chunker.embed_semantic_units",
+        new=AsyncMock(side_effect=EmbeddingError("Unavailable")),
+    ) as embed:
+        with pytest.raises(EmbeddingError, match="Unavailable"):
+            await chunk_document(make_document(content))
+    embed.assert_awaited_once()

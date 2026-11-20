@@ -1,8 +1,10 @@
-﻿import time
-from dataclasses import dataclass
-from typing import Optional
+"""Chat orchestration with one response path and an overall deadline."""
+
+import asyncio
+import time
 
 from app.config import settings
+from app.core.deadlines import deadline_scope
 from app.core.embedder import embed_text
 from app.core.generator import generate_answer
 from app.core.retriever import retrieve
@@ -11,129 +13,78 @@ from app.models.schemas import ChatResponse, RetrievedChunk
 from app.utils.errors import EmbeddingError, LLMError
 from app.utils.logger import logger
 
+CHAT_DEADLINE_SECONDS = 55.0
+PREPARATION_DEADLINE_SECONDS = 10.0
 
-@dataclass
-class PipelineResult:
-    answer: Optional[str]
-    query_status: str  # answered | no_source | low_match | error
-    chunks: list[DocumentChunk]
-    top_similarity: Optional[float]
-    model_version: Optional[str]
-    processing_time_ms: int
-    error_message: Optional[str] = None
+
+async def _prepare_sources(
+    question: str, k: int, eligible_documents: list[dict]
+) -> list[DocumentChunk]:
+    query_embedding = await embed_text(question)
+    return await retrieve(query_embedding, top_k=k, eligible_documents=eligible_documents)
+
+
+async def _run_rag_pipeline(
+    question: str, top_k: int | None, eligible_documents: list[dict], started: float
+) -> ChatResponse:
+    k = top_k if top_k is not None else settings.top_k_default
+    with deadline_scope(PREPARATION_DEADLINE_SECONDS):
+        chunks = await asyncio.wait_for(
+            _prepare_sources(question, k, eligible_documents), PREPARATION_DEADLINE_SECONDS
+        )
+    top_similarity = chunks[0].similarity if chunks else None
+    if not chunks:
+        status = "no_source"
+    elif top_similarity < settings.similarity_threshold:
+        status = "low_match"
+    else:
+        status = "answered"
+    answer, model = await generate_answer(question, chunks)
+    elapsed = int((time.monotonic() - started) * 1000)
+    logger.info("RAG result={} ({}ms)", status, elapsed)
+    return ChatResponse(
+        answer=answer,
+        query_status=status,
+        retrieved_chunks=[
+            RetrievedChunk(
+                source_file=c.source_file,
+                chunk_index=c.chunk_index,
+                content=c.content,
+                similarity=c.similarity,
+                metadata=c.metadata,
+            )
+            for c in chunks
+        ],
+        top_similarity=top_similarity,
+        model_version=model,
+        processing_time_ms=elapsed,
+    )
 
 
 async def run_rag_pipeline(
     question: str,
-    top_k: Optional[int] = None,
-    eligible_documents: Optional[list[dict]] = None,
+    top_k: int | None = None,
+    eligible_documents: list[dict] | None = None,
 ) -> ChatResponse:
-    """
-    Full RAG pipeline:
-      1. Embed question
-      2. Retrieve top-K similar chunks
-      3. Check similarity threshold
-      4. Generate answer with LLM (if threshold met)
-      5. Return structured ChatResponse
-
-    Args:
-        question: KTV's question in Vietnamese
-        top_k: Override number of chunks to retrieve
-
-    Returns:
-        ChatResponse ready to be returned by the API endpoint
-    """
-    start_ms = time.monotonic()
-
-    k = top_k if top_k is not None else settings.top_k_default
-    threshold = settings.similarity_threshold
-
+    """Return a chat result within 55 seconds; missing eligibility permits no sources."""
+    started = time.monotonic()
     try:
-        # ── Step 1: Embed the query ──────────────────────────────────────────
-        logger.info(f"RAG pipeline started | question_len={len(question)} top_k={k}")
-        query_embedding = await embed_text(question)
-
-        # ── Step 2: Retrieve similar chunks ─────────────────────────────────
-        chunks = await retrieve(query_embedding, top_k=k,
-            **({"eligible_documents": eligible_documents} if eligible_documents is not None else {}))
-
-        top_similarity = chunks[0].similarity if chunks else None
-
-        # ── Step 3: Threshold check ──────────────────────────────────────────
-        if not chunks:
-            answer, model_version = await generate_answer(question, [])
-            elapsed = int((time.monotonic() - start_ms) * 1000)
-            logger.info(f"RAG result=no_source ({elapsed}ms)")
-            return ChatResponse(
-                answer=answer,
-                query_status="no_source",
-                retrieved_chunks=[],
-                top_similarity=None,
-                model_version=model_version,
-                processing_time_ms=elapsed,
+        with deadline_scope(CHAT_DEADLINE_SECONDS):
+            return await asyncio.wait_for(
+                _run_rag_pipeline(question, top_k, eligible_documents or [], started),
+                CHAT_DEADLINE_SECONDS,
             )
-
-        if top_similarity < threshold:
-            answer, model_version = await generate_answer(question, chunks)
-            elapsed = int((time.monotonic() - start_ms) * 1000)
-            logger.info(f"RAG result=low_match top_sim={top_similarity:.4f} ({elapsed}ms)")
-            return ChatResponse(
-                answer=answer,
-                query_status="low_match",
-                retrieved_chunks=_to_schema_chunks(chunks),
-                top_similarity=top_similarity,
-                model_version=model_version,
-                processing_time_ms=elapsed,
-            )
-
-        # ── Step 4: Generate answer ───────────────────────────────────────────
-        answer, model_version = await generate_answer(question, chunks)
-
-        elapsed = int((time.monotonic() - start_ms) * 1000)
-        logger.info(f"RAG result=answered top_sim={top_similarity:.4f} ({elapsed}ms)")
-
-        return ChatResponse(
-            answer=answer,
-            query_status="answered",
-            retrieved_chunks=_to_schema_chunks(chunks),
-            top_similarity=top_similarity,
-            model_version=model_version,
-            processing_time_ms=elapsed,
-        )
-
-    except (EmbeddingError, LLMError) as e:
-        elapsed = int((time.monotonic() - start_ms) * 1000)
-        logger.error(f"RAG pipeline error: {e.message} ({elapsed}ms)")
-        return ChatResponse(
-            answer=None,
-            query_status="error",
-            retrieved_chunks=[],
-            top_similarity=None,
-            model_version=None,
-            processing_time_ms=elapsed,
-        )
+    except asyncio.TimeoutError:
+        logger.warning("Chat deadline exceeded")
+    except (EmbeddingError, LLMError) as exc:
+        logger.error("RAG pipeline error: {}", exc.message)
     except Exception:
-        elapsed = int((time.monotonic() - start_ms) * 1000)
-        logger.exception(f"Unexpected RAG pipeline error ({elapsed}ms)")
-        return ChatResponse(
-            answer=None,
-            query_status="error",
-            retrieved_chunks=[],
-            top_similarity=None,
-            model_version=None,
-            processing_time_ms=elapsed,
-        )
-
-
-def _to_schema_chunks(chunks: list[DocumentChunk]) -> list[RetrievedChunk]:
-    """Convert internal DocumentChunk dataclasses to Pydantic schema objects."""
-    return [
-        RetrievedChunk(
-            source_file=c.source_file,
-            chunk_index=c.chunk_index,
-            content=c.content,
-            similarity=c.similarity,
-            metadata=c.metadata,
-        )
-        for c in chunks
-    ]
+        logger.exception("Unexpected RAG pipeline error")
+    return ChatResponse(
+        answer=None,
+        query_status="error",
+        retrieved_chunks=[],
+        top_similarity=None,
+        model_version=None,
+        processing_time_ms=int((time.monotonic() - started) * 1000),
+    )

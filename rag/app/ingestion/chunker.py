@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 
 from app.config import settings
-from app.core.embedder import embed_document_texts
+from app.core.embedder import embed_semantic_units
 from app.ingestion.loader import RawDocument
 
 
@@ -17,43 +17,12 @@ class TextChunk:
     metadata: dict
 
 
-def _recursive_chunks(doc: RawDocument, chunk_size: int, overlap: int) -> list[TextChunk]:
-    """Keep the previous character splitter available as a configured fallback."""
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size,
-        chunk_overlap=overlap,
-        separators=["\n\n", "\n", ".", "?", "!", " ", ""],
-        length_function=len,
-    )
-    texts = splitter.split_text(doc.content)
-    return [
-        TextChunk(
-            source_file=doc.source_file,
-            chunk_index=index,
-            content=text.strip(),
-            metadata={
-                **doc.metadata,
-                "chunk_size_chars": len(text.strip()),
-                "chunking_strategy": "recursive",
-            },
-        )
-        for index, text in enumerate(texts)
-        if text.strip()
-    ]
-
-
 def _split_sentences(text: str) -> list[str]:
     """Split Vietnamese prose while retaining punctuation in each sentence."""
     normalized = re.sub(r"[ \t\r\f\v]+", " ", text.strip())
     if not normalized:
         return []
-    return [
-        part.strip()
-        for part in re.split(r"(?<=[.!?…])\s+", normalized)
-        if part.strip()
-    ]
+    return [part.strip() for part in re.split(r"(?<=[.!?…])\s+", normalized) if part.strip()]
 
 
 def _hard_split(text: str, limit: int) -> list[str]:
@@ -106,7 +75,7 @@ def _semantic_units(text: str, unit_target: int) -> list[str]:
 def _cosine_similarity(left: list[float], right: list[float]) -> float:
     if len(left) != len(right):
         raise ValueError("Embedding dimensions do not match")
-    dot = sum(a * b for a, b in zip(left, right))
+    dot = sum(a * b for a, b in zip(left, right, strict=True))
     left_norm = math.sqrt(sum(value * value for value in left))
     right_norm = math.sqrt(sum(value * value for value in right))
     if left_norm == 0 or right_norm == 0:
@@ -182,21 +151,13 @@ def _assemble_chunks(
 
 async def chunk_document(
     doc: RawDocument,
-    chunk_size: int | None = None,
     overlap: int | None = None,
     min_chunk_size: int | None = None,
     max_chunk_size: int | None = None,
     breakpoint_percentile: float | None = None,
 ) -> list[TextChunk]:
-    """Split a document with semantic boundaries, or use the configured fallback."""
-    strategy = settings.chunking_strategy.strip().lower()
+    """Split a document using semantic boundaries and bounded chunk sizes."""
     ovlp = overlap if overlap is not None else settings.chunk_overlap
-
-    if strategy == "recursive":
-        size = chunk_size if chunk_size is not None else settings.chunk_size
-        return _recursive_chunks(doc, size, ovlp)
-    if strategy != "semantic":
-        raise ValueError(f"Unsupported chunking strategy: {settings.chunking_strategy}")
 
     min_size = min_chunk_size if min_chunk_size is not None else settings.min_chunk_size
     max_size = max_chunk_size if max_chunk_size is not None else settings.max_chunk_size
@@ -222,7 +183,7 @@ async def chunk_document(
 
     break_before: set[int] = set()
     if len(units) > 1:
-        embeddings = await embed_document_texts(units)
+        embeddings = await embed_semantic_units(units)
         distances = [
             1.0 - _cosine_similarity(embeddings[index], embeddings[index + 1])
             for index in range(len(embeddings) - 1)

@@ -15,8 +15,8 @@ RUN python -m pip install --no-cache-dir -r requirements.txt && python -m pip ch
 # Copy application code
 COPY app/ ./app/
 
-# Create data directory
-RUN mkdir -p data/documents logs
+# Persistent application logs; uploaded documents use temporary directories.
+RUN mkdir -p logs
 
 # Run as non-root user
 RUN adduser --disabled-password --gecos "" raguser && chown -R raguser:raguser /app
