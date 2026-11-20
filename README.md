@@ -15,7 +15,6 @@ smartshrimp_ai/
 │   ├── models/           # Local checkpoint files, not committed
 │   └── .env              # Private classification settings
 ├── rag/                  # RAG API, ingestion code, dependencies and tests
-│   ├── data/documents/   # Local documents, not committed
 │   └── .env              # Private RAG settings
 ├── docker-compose.yml    # Runs both services under smartshrimp-ai
 ├── NOTICE                # Source references and third-party terms
@@ -63,9 +62,11 @@ TORCH_NUM_THREADS=2
 ```dotenv
 APP_ENV=development
 INTERNAL_API_KEY=<private-shared-key>
-GEMINI_API_KEY=<your-gemini-api-key>
+GEMINI_INGESTION_API_KEY=<your-ingestion-api-key>
+GEMINI_QUERY_API_KEY=<your-query-api-key>
 GEMINI_EMBEDDING_MODEL=models/gemini-embedding-2
-GEMINI_LLM_MODEL=gemini-3.6-flash
+GEMINI_LLM_MODEL=gemini-3.5-flash-lite
+GEMINI_FALLBACK_MODELS=["gemini-3.1-flash-lite"]
 DATABASE_URL=<verified-postgresql-connection-url>
 ```
 

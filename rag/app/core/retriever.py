@@ -1,4 +1,4 @@
-﻿from app.config import settings
+from app.config import settings
 from app.db.vector_store import DocumentChunk, search_similar_chunks
 from app.utils.logger import logger
 
@@ -23,11 +23,12 @@ async def retrieve(
     chunks = await search_similar_chunks(
         query_embedding=query_embedding,
         top_k=k,
-        **({"eligible_documents": eligible_documents} if eligible_documents is not None else {}),
+        eligible_documents=eligible_documents or [],
     )
 
     logger.debug(
-        f"Retrieved {len(chunks)} chunks; "
-        f"top_similarity={chunks[0].similarity:.4f}" if chunks else "no chunks found"
+        f"Retrieved {len(chunks)} chunks; " f"top_similarity={chunks[0].similarity:.4f}"
+        if chunks
+        else "no chunks found"
     )
     return chunks

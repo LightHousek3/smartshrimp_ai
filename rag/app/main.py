@@ -1,37 +1,37 @@
-﻿from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.config import settings
-from app.db.session import init_db_pool, close_db_pool
 from app.api.v1.router import router as v1_router
+from app.config import settings
+from app.db.session import close_db_pool, init_db_pool
 from app.utils.logger import logger
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
+    settings.validate_runtime()
     # ── Startup ──────────────────────────────────────────────────────────────
     logger.info(f"SmartShrimp RAG Service starting (env={settings.app_env})")
     await init_db_pool()
     logger.info("Ready to serve requests")
 
-    yield
-
-    # ── Shutdown ─────────────────────────────────────────────────────────────
-    logger.info("Shutting down RAG service...")
-    await close_db_pool()
-    logger.info("Shutdown complete")
+    try:
+        yield
+    finally:
+        logger.info("Shutting down RAG service...")
+        await close_db_pool()
 
 
 def create_app() -> FastAPI:
     app = FastAPI(
         title="SmartShrimp RAG Service",
         description=(
-            "Internal FastAPI microservice cung cấp RAG pipeline "
-            "cho tính năng Chatbox của hệ thống SmartShrimp."
+            "Internal FastAPI microservice providing RAG pipeline "
+            "for the Chatbox feature of the SmartShrimp system."
         ),
         version=settings.app_version,
         docs_url="/docs" if not settings.is_production else None,
@@ -39,13 +39,13 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # ── CORS (internal only — chỉ cho phép BE gọi) ───────────────────────────
+    # Browser origin policy; service-to-service access still requires X-Internal-Key.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000"],
-        allow_credentials=True,
-        allow_methods=["POST", "GET"],
-        allow_headers=["*"],
+        allow_origins=settings.cors_allow_origins,
+        allow_credentials=settings.cors_allow_credentials,
+        allow_methods=settings.cors_allow_methods,
+        allow_headers=settings.cors_allow_headers,
     )
 
     # ── Global exception handler ─────────────────────────────────────────────

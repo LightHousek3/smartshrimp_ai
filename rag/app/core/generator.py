@@ -1,9 +1,13 @@
+import asyncio
+
 from app.config import settings
+from app.core.deadlines import deadline_scope, request_options
 from app.db.vector_store import DocumentChunk
-from app.utils.logger import logger
 from app.utils.errors import LLMError
+from app.utils.logger import logger
 
 _client = None
+MODEL_DEADLINE_SECONDS = 15.0
 
 SYSTEM_PROMPT = (
     "Bạn là trợ lý kỹ thuật nuôi tôm chuyên nghiệp của hệ thống SmartShrimp. "
@@ -18,9 +22,15 @@ SYSTEM_PROMPT = (
 
 def _get_client():
     global _client
+    try:
+        api_key = settings.gemini_key_for("query")
+    except ValueError as exc:
+        logger.error(str(exc))
+        raise LLMError(str(exc)) from exc
     if _client is None:
         from google import genai
-        _client = genai.Client(api_key=settings.gemini_api_key)
+
+        _client = genai.Client(api_key=api_key)
     return _client
 
 
@@ -28,19 +38,13 @@ def _build_context(chunks: list[DocumentChunk]) -> str:
     parts = []
     for i, chunk in enumerate(chunks, 1):
         parts.append(
-            f"[Tài Liệu {i} - {chunk.source_file}, phần {chunk.chunk_index}]\n"
-            f"{chunk.content}"
+            f"[Tài Liệu {i} - {chunk.source_file}, phần {chunk.chunk_index}]\n{chunk.content}"
         )
     return "\n\n---\n\n".join(parts)
 
 
 def _build_user_prompt(context: str, question: str) -> str:
-    return (
-        f"Tài liệu tham khảo:\n\n{context}\n\n"
-        f"---\n\n"
-        f"Câu hỏi: {question}\n\n"
-        f"Trả lời:"
-    )
+    return f"Tài liệu tham khảo:\n\n{context}\n\n---\n\nCâu hỏi: {question}\n\nTrả lời:"
 
 
 async def _count_tokens(model: str, text: str) -> int:
@@ -49,6 +53,7 @@ async def _count_tokens(model: str, text: str) -> int:
     response = await client.aio.models.count_tokens(
         model=model,
         contents=text,
+        config={"http_options": request_options(15.0)},
     )
     return response.total_tokens
 
@@ -59,57 +64,33 @@ async def _trim_chunks_to_fit(
     model: str,
     max_input_tokens: int,
 ) -> list[DocumentChunk]:
-    """
-    Trim chunks (removing lowest-similarity first) until the full prompt
-    fits within max_input_tokens.
+    """Find a fitting prefix with logarithmic token-count requests."""
+    ordered = sorted(chunks, key=lambda chunk: chunk.similarity, reverse=True)
 
-    Returns the trimmed list (may be empty if even the question alone is too long).
-    """
-    # Sort by similarity descending so we keep the best chunks
-    sorted_chunks = sorted(chunks, key=lambda c: c.similarity, reverse=True)
+    async def fits(count):
+        prompt = _build_user_prompt(_build_context(ordered[:count]), question)
+        tokens = await _count_tokens(model, f"{SYSTEM_PROMPT}\n\n{prompt}")
+        return tokens <= max_input_tokens
 
-    # Start with all chunks and progressively remove the least relevant
-    current_chunks = list(sorted_chunks)
-    while True:
-        context = _build_context(current_chunks)
-        user_prompt = _build_user_prompt(context, question)
-        full_prompt = f"{SYSTEM_PROMPT}\n\n{user_prompt}"
-
-        total_tokens = await _count_tokens(model, full_prompt)
-
-        if total_tokens <= max_input_tokens:
-            if len(current_chunks) < len(chunks):
-                logger.warning(
-                    f"Trimmed context from {len(chunks)} to "
-                    f"{len(current_chunks)} chunks to fit token limit "
-                    f"({total_tokens}/{max_input_tokens} tokens)"
-                )
-            else:
-                logger.debug(
-                    f"Prompt tokens: {total_tokens}/{max_input_tokens} "
-                    f"({len(current_chunks)} chunks)"
-                )
-            return current_chunks
-
-        if not current_chunks:
-            # Even with no chunks, the question itself exceeds the limit
-            logger.error(
-                f"Question alone exceeds token limit: "
-                f"{total_tokens}/{max_input_tokens}"
-            )
-            return []
-
-        # Remove the least relevant chunk (last in sorted order)
-        removed = current_chunks.pop()
-        logger.debug(
-            f"Removing chunk '{removed.source_file}' part {removed.chunk_index} "
-            f"(similarity={removed.similarity:.4f}) to fit token budget"
-        )
+    if await fits(len(ordered)):
+        return ordered
+    if not ordered or not await fits(0):
+        raise LLMError("Question and system prompt exceed the token budget")
+    # Empty context fits; full context does not. Keep the largest fitting prefix.
+    low, high = 0, len(ordered)
+    while high - low > 1:
+        middle = (low + high) // 2
+        if await fits(middle):
+            low = middle
+        else:
+            high = middle
+    return ordered[:low]
 
 
-async def generate_answer(
+async def _generate_for_model(
     question: str,
     chunks: list[DocumentChunk],
+    model: str,
 ) -> tuple[str, str]:
     """
     Generate an answer using Gemini LLM given retrieved context chunks.
@@ -130,10 +111,7 @@ async def generate_answer(
         max_output = settings.max_output_tokens
         max_input = settings.max_context_tokens - max_output
 
-        if chunks:
-            chunks = await _trim_chunks_to_fit(
-                question, chunks, settings.gemini_llm_model, max_input,
-            )
+        chunks = await _trim_chunks_to_fit(question, chunks, model, max_input)
 
         context = _build_context(chunks)
         user_prompt = _build_user_prompt(context, question)
@@ -141,9 +119,10 @@ async def generate_answer(
         # ── Generate ────────────────────────────────────────────────────
         client = _get_client()
         response = await client.aio.models.generate_content(
-            model=settings.gemini_llm_model,
+            model=model,
             contents=user_prompt,
             config=genai_types.GenerateContentConfig(
+                http_options=request_options(15.0),
                 system_instruction=SYSTEM_PROMPT,
                 temperature=0.2,
                 max_output_tokens=max_output,
@@ -151,10 +130,31 @@ async def generate_answer(
         )
         answer = response.text.strip()
         logger.debug(f"Generated answer ({len(answer)} chars)")
-        return answer, settings.gemini_llm_model
+        return answer, model
 
     except LLMError:
         raise
     except Exception as e:
         logger.error(f"LLM generation failed: {e}")
-        raise LLMError(f"Gemini generation error: {str(e)}")
+        raise LLMError(f"Gemini generation error: {str(e)}") from e
+
+
+async def generate_answer(question: str, chunks: list[DocumentChunk]) -> tuple[str, str]:
+    """Try at most two models total: primary then one fallback, 15s per model."""
+    _get_client()  # Missing credentials fail before trying any model.
+    models = list(dict.fromkeys([settings.gemini_llm_model, *settings.gemini_fallback_models]))[:2]
+    last_error = None
+    for index, model in enumerate(models):
+        try:
+            with deadline_scope(MODEL_DEADLINE_SECONDS):
+                return await asyncio.wait_for(
+                    _generate_for_model(question, chunks, model), MODEL_DEADLINE_SECONDS
+                )
+        except Exception as exc:
+            cause = exc.__cause__ or exc
+            if getattr(cause, "code", None) in (400, 401, 403):
+                raise LLMError("Gemini generation request rejected") from exc
+            last_error = exc
+            if index < len(models) - 1:
+                logger.warning("Model attempt failed; trying next configured model")
+    raise LLMError("All configured models failed or exceeded their deadlines") from last_error

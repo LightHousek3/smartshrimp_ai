@@ -1,6 +1,8 @@
-﻿"""Unit tests for retriever module."""
-import pytest
+"""Unit tests for retriever module."""
+
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from app.core.retriever import retrieve
 from app.db.vector_store import DocumentChunk
@@ -30,7 +32,9 @@ async def test_retrieve_returns_chunks():
         chunks = await retrieve(embedding, top_k=3)
 
         assert len(chunks) == 3
-        mock_search.assert_called_once_with(query_embedding=embedding, top_k=3)
+        mock_search.assert_called_once_with(
+            query_embedding=embedding, top_k=3, eligible_documents=[]
+        )
 
 
 @pytest.mark.asyncio
@@ -45,7 +49,9 @@ async def test_retrieve_uses_default_top_k_from_config():
 
         await retrieve([0.1] * 768)
 
-        mock_search.assert_called_once_with(query_embedding=[0.1] * 768, top_k=7)
+        mock_search.assert_called_once_with(
+            query_embedding=[0.1] * 768, top_k=7, eligible_documents=[]
+        )
 
 
 @pytest.mark.asyncio

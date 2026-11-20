@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter
+from fastapi import APIRouter
 from app.config import settings
 
 router = APIRouter()
@@ -6,7 +6,7 @@ router = APIRouter()
 
 @router.get("/health", tags=["Health"])
 async def health_check():
-    """Health check endpoint — không yêu cầu authentication."""
+    """Health check endpoint — no authentication required."""
     return {
         "status": "ok",
         "version": settings.app_version,
