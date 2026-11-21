@@ -128,6 +128,10 @@ async def test_index_replaces_atomically_and_keeps_source_metadata(
     assert '"document_id": "' + DOC_ID + '"' in metadata
     assert '"attempt": 2' in metadata and '"original_filename": "guide.txt"' in metadata
     assert '"page": 1' in metadata
+    sql, rows = connection.executemany.call_args.args
+    assert rows[0][0] == DOC_ID and len(rows[0]) == 5
+    assert "INSERT INTO document_chunks(document_id," in sql
+    assert "source_file" not in sql
     sqls = [call.args[0] for call in connection.execute.call_args_list]
     assert "pg_advisory_xact_lock" in sqls[0]
     assert "INSERT INTO rag_index_state" in sqls[1]
@@ -156,7 +160,11 @@ async def test_parse_and_embedding_hold_no_connection_or_transaction(
 
     async def prepare(doc):
         assert connection.active_connections == connection.active_transactions == 0
-        assert connection.index_state == {"attempt": 2, "deleted": False, "chunk_count": 0}
+        assert connection.index_state == {
+            "attempt": 2,
+            "deleted": False,
+            "chunk_count": 0,
+        }
         return prepared_chunks()
 
     monkeypatch.setattr(managed, "parse_managed", parse)
@@ -330,13 +338,19 @@ async def test_embedding_error_does_not_delete_previous_index(connection, monkey
     path = tmp_path / "guide.txt"
     path.write_text("Shrimp guide", encoding="utf-8")
     monkeypatch.setattr(
-        managed, "prepare_document_chunks", AsyncMock(side_effect=RuntimeError("embedding failed"))
+        managed,
+        "prepare_document_chunks",
+        AsyncMock(side_effect=RuntimeError("embedding failed")),
     )
     with pytest.raises(RuntimeError):
         await managed.index_document(path, DOC_ID, 2, "guide.txt", "Guide")
     assert len(connection.execute.call_args_list) == 2  # Lock and attempt reservation only.
     connection.executemany.assert_not_awaited()
-    assert connection.transaction.return_value.__aexit__.call_args.args == (None, None, None)
+    assert connection.transaction.return_value.__aexit__.call_args.args == (
+        None,
+        None,
+        None,
+    )
     assert connection.index_state == {"attempt": 2, "deleted": False, "chunk_count": 0}
 
 
@@ -354,7 +368,10 @@ async def test_later_embedding_batch_failure_keeps_previous_index(
     chunks = [TextChunk(DOC_ID, i, f"Text {i}", {}) for i in range(17)]
     with (
         patch("app.ingestion.prepare.chunk_document", new=AsyncMock(return_value=chunks)),
-        patch("app.core.embedder._embed_many", side_effect=[[[0.1]] * 16, EmbeddingError()]),
+        patch(
+            "app.core.embedder._embed_many",
+            side_effect=[[[0.1]] * 16, EmbeddingError()],
+        ),
     ):
         with pytest.raises(EmbeddingError):
             await managed.index_document(path, DOC_ID, 1, "guide.txt", "Guide")
@@ -369,7 +386,7 @@ async def test_delete_persists_fence_before_removing_chunks(connection):
     assert "pg_advisory_xact_lock" in calls[0].args[0]
     assert "deleted=TRUE" in calls[1].args[0]
     assert calls[2].args == (
-        "DELETE FROM document_chunks WHERE metadata->>'document_id' = $1",
+        "DELETE FROM document_chunks WHERE document_id = $1::uuid",
         DOC_ID,
     )
 
@@ -414,7 +431,9 @@ async def test_retrieval_enforces_id_and_current_attempt_in_sql(connection):
     docs = [{"document_id": DOC_ID, "attempt": 2}]
     await vector_store.search_similar_chunks([0.1], eligible_documents=docs)
     sql, *params = connection.fetch.call_args.args
-    assert "metadata->>'document_id' = allowed->>'document_id'" in sql
+    assert "document_chunks.document_id = (allowed->>'document_id')::uuid" in sql
+    assert "NULLIF(metadata->>'original_filename', '')" in sql
+    assert "NULLIF(metadata->>'title', ''), document_id::text) AS source_file" in sql
     assert "metadata->>'attempt' = allowed->>'attempt'" in sql
     assert sql.index("WHERE EXISTS") < sql.index("ORDER BY")
     assert '"attempt": 2' in params[-1]
@@ -452,5 +471,9 @@ async def test_internal_upload_auth_contract_and_cleanup(monkeypatch):
             },
         )
         assert response.status_code == 200
-        assert response.json() == {"document_id": DOC_ID, "attempt": 2, "chunks_count": 3}
+        assert response.json() == {
+            "document_id": DOC_ID,
+            "attempt": 2,
+            "chunks_count": 3,
+        }
     assert paths and not paths[0].exists()

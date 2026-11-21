@@ -45,7 +45,8 @@ async def index_document(
                     "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", document_id
                 )
                 state = await conn.fetchrow(
-                    "SELECT * FROM rag_index_state WHERE document_id = $1::uuid", document_id
+                    "SELECT * FROM rag_index_state WHERE document_id = $1::uuid",
+                    document_id,
                 )
                 completed = _completed_attempt(state, attempt)
                 if completed is not None:
@@ -67,7 +68,10 @@ async def index_document(
             raise InvalidDocumentError("Cannot read document") from exc
         doc.source_file = document_id
         doc.metadata.update(
-            document_id=document_id, attempt=attempt, original_filename=filename, title=title
+            document_id=document_id,
+            attempt=attempt,
+            original_filename=filename,
+            title=title,
         )
         chunks = await prepare_document_chunks(doc)
         if not chunks:
@@ -90,7 +94,8 @@ async def index_document(
                     "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", document_id
                 )
                 state = await conn.fetchrow(
-                    "SELECT * FROM rag_index_state WHERE document_id = $1::uuid", document_id
+                    "SELECT * FROM rag_index_state WHERE document_id = $1::uuid",
+                    document_id,
                 )
                 completed = _completed_attempt(state, attempt)
                 if completed is not None:
@@ -98,11 +103,12 @@ async def index_document(
                 if not state or state["attempt"] != attempt:
                     raise DocumentConflictError("Attempt reservation no longer exists")
                 await conn.execute(
-                    "DELETE FROM document_chunks WHERE metadata->>'document_id' = $1", document_id
+                    "DELETE FROM document_chunks WHERE document_id = $1::uuid",
+                    document_id,
                 )
                 await conn.executemany(
-                    """INSERT INTO document_chunks(source_file, chunk_index, content, embedding, metadata)
-                       VALUES ($1, $2, $3, $4::vector, $5::jsonb)""",
+                    """INSERT INTO document_chunks(document_id, chunk_index, content, embedding, metadata)
+                       VALUES ($1::uuid, $2, $3, $4::vector, $5::jsonb)""",
                     rows,
                 )
                 await conn.execute(
@@ -136,5 +142,5 @@ async def delete_vectors(document_id: str):
                 document_id,
             )
             await conn.execute(
-                "DELETE FROM document_chunks WHERE metadata->>'document_id' = $1", document_id
+                "DELETE FROM document_chunks WHERE document_id = $1::uuid", document_id
             )
