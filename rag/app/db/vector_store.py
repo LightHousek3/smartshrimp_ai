@@ -37,13 +37,14 @@ async def search_similar_chunks(
 
     sql = """
         SELECT id::text,
-               COALESCE(metadata->>'original_filename', source_file) AS source_file,
+               COALESCE(NULLIF(metadata->>'original_filename', ''),
+                        NULLIF(metadata->>'title', ''), document_id::text) AS source_file,
                chunk_index, content, metadata,
                1 - (embedding <=> $1::vector) AS similarity
         FROM document_chunks
         WHERE EXISTS (
             SELECT 1 FROM jsonb_array_elements($3::jsonb) AS allowed
-            WHERE metadata->>'document_id' = allowed->>'document_id'
+            WHERE document_chunks.document_id = (allowed->>'document_id')::uuid
               AND metadata->>'attempt' = allowed->>'attempt'
         )
         ORDER BY embedding <=> $1::vector
