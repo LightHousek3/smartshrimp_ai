@@ -2,6 +2,7 @@
 from typing import AsyncGenerator
 
 import asyncpg
+
 from app.config import settings
 from app.utils.logger import logger
 
@@ -19,8 +20,8 @@ async def init_db_pool() -> None:
         db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
         _pool = await asyncpg.create_pool(
             dsn=db_url,
-            min_size=2,
-            max_size=10,
+            min_size=settings.db_pool_min_size,
+            max_size=settings.db_pool_max_size,
             command_timeout=30,
         )
         logger.info("Database connection pool initialized")

@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,6 +38,8 @@ class Settings(BaseSettings):
 
     # Database (PostgreSQL + pgvector)
     database_url: str = ""
+    db_pool_min_size: int = Field(default=2, ge=0)
+    db_pool_max_size: int = Field(default=10, ge=1)
 
     # RAG tuning
     similarity_threshold: float = 0.5
@@ -53,6 +55,12 @@ class Settings(BaseSettings):
 
     # Logging
     log_level: str = "DEBUG"
+
+    @model_validator(mode="after")
+    def validate_db_pool_size(self) -> "Settings":
+        if self.db_pool_min_size > self.db_pool_max_size:
+            raise ValueError("DB_POOL_MIN_SIZE must be less than or equal to DB_POOL_MAX_SIZE")
+        return self
 
     @property
     def is_production(self) -> bool:

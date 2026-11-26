@@ -127,6 +127,8 @@ DATABASE_URL=postgresql://postgres:password@localhost:5432/smartshrimp
 | `GEMINI_LLM_MODEL` | `gemini-3.5-flash-lite` | Model sinh câu trả lời. |
 | `GEMINI_FALLBACK_MODELS` | `["gemini-3.1-flash-lite"]` | Tối đa một fallback; tổng tối đa hai model. |
 | `DATABASE_URL` | rỗng | Chuỗi kết nối PostgreSQL. |
+| `DB_POOL_MIN_SIZE` | `2` | Số kết nối mở khi khởi động mỗi worker. Cho phép `0` để mở theo nhu cầu. |
+| `DB_POOL_MAX_SIZE` | `10` | Số kết nối tối đa mỗi worker. Phải từ `1` trở lên và không nhỏ hơn `DB_POOL_MIN_SIZE`. |
 | `SIMILARITY_THRESHOLD` | `0.5` | Ngưỡng similarity tối thiểu để gọi LLM. |
 | `TOP_K_DEFAULT` | `3` | Số chunk được retrieve mặc định. |
 | `SEMANTIC_BREAKPOINT_PERCENTILE` | `90` | Mức percentile dùng để phát hiện điểm chuyển chủ đề. |
